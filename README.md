@@ -92,7 +92,7 @@ SBOM API Response: 200
 NOTE: the DT has been created in the SDT from the information received from the toe provider.
 
 DELETION OF SDT AND DITTO PODS IN THE KUBERNETES CLUSTER
-copy the file 'delete_k3s_cluster.py' and paste it into ~/ditto repository
+copy the file 'delete_k3s_cluster.py' and paste it into /ditto repository
 to destroy the pods (not the kubernetes cluster), run the command -> python3  delete_k3s_cluster.py
 verify the pods of sdt have been deleted
 allen@sdt:~/ditto$ kubectl get pods
