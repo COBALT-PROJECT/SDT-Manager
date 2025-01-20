@@ -1,0 +1,72 @@
+this is the logs when i instantiate the ditto k3s cluster using the python script (python3 deploy_ditto deploy-ditto):
+
+allen@sdt:~/ditto$ python3 deploy_ditto.py deploy-ditto
+2025-01-17 15:52:54,907 - INFO - Starting Ditto Cluster Deployment...
+2025-01-17 15:52:54,907 - INFO - Creating ConfigMaps...
+2025-01-17 15:52:54,908 - INFO - Executing in /home/allen/ditto: /usr/local/bin/kubectl create configmap nginx-conf --from-file=deployment/kubernetes/deploymentFiles/nginx/nginx.conf
+2025-01-17 15:52:55,002 - INFO - configmap/nginx-conf created
+
+2025-01-17 15:52:55,002 - INFO - Executing in /home/allen/ditto: /usr/local/bin/kubectl create configmap nginx-cors --from-file=deployment/kubernetes/deploymentFiles/nginx/nginx-cors.conf
+2025-01-17 15:52:55,080 - INFO - configmap/nginx-cors created
+
+2025-01-17 15:52:55,080 - INFO - Executing in /home/allen/ditto: /usr/local/bin/kubectl create configmap nginx-htpasswd --from-file=deployment/kubernetes/deploymentFiles/nginx/nginx.htpasswd
+2025-01-17 15:52:55,164 - INFO - configmap/nginx-htpasswd created
+
+2025-01-17 15:52:55,164 - INFO - Executing in /home/allen/ditto: /usr/local/bin/kubectl create configmap nginx-index --from-file=deployment/kubernetes/deploymentFiles/nginx/index.html
+2025-01-17 15:52:55,244 - INFO - configmap/nginx-index created
+
+2025-01-17 15:52:55,244 - INFO - Executing in /home/allen/ditto: /usr/local/bin/kubectl create configmap swagger-ui-api --from-file=documentation/src/main/resources/openapi
+2025-01-17 15:52:55,359 - INFO - configmap/swagger-ui-api created
+
+2025-01-17 15:52:55,359 - INFO - Deploying Kubernetes Services...
+2025-01-17 15:52:55,359 - INFO - Executing in /home/allen/ditto: /usr/local/bin/kubectl apply -f deployment/kubernetes/deploymentFiles/mongodb/mongodb.yaml
+2025-01-17 15:52:55,501 - INFO - service/mongodb created
+deployment.apps/mongodb created
+
+2025-01-17 15:52:55,501 - INFO - Executing in /home/allen/ditto: /usr/local/bin/kubectl apply -f deployment/kubernetes/deploymentFiles/ditto/ditto-log-files.yaml
+2025-01-17 15:52:55,643 - INFO - pod/ditto-logs-initiator created
+
+2025-01-17 15:52:55,643 - INFO - Executing in /home/allen/ditto: /usr/local/bin/kubectl apply -f deployment/kubernetes/deploymentFiles/ditto/
+2025-01-17 15:52:56,226 - INFO - deployment.apps/connectivity created
+deployment.apps/things created
+deployment.apps/things-search created
+deployment.apps/policies created
+deployment.apps/gateway created
+service/gateway created
+pod/ditto-logs-initiator configured
+role.rbac.authorization.k8s.io/pod-reader created
+rolebinding.rbac.authorization.k8s.io/read-pods created
+
+2025-01-17 15:52:56,227 - INFO - Ditto Cluster Deployment Completed.
+
+This is the logs when I instantiate the ditto k3s cluster using the shell script (./deploy_ditto.sh)
+Creating ConfigMaps...
+configmap/nginx-conf created
+configmap/nginx-cors created
+configmap/nginx-htpasswd created
+configmap/nginx-index created
+configmap/swagger-ui-api created
+Deploying MongoDB...
+service/mongodb created
+deployment.apps/mongodb created
+Deploying Ditto log files...
+pod/ditto-logs-initiator created
+Deploying Ditto services...
+deployment.apps/connectivity created
+deployment.apps/things created
+deployment.apps/things-search created
+deployment.apps/policies created
+deployment.apps/gateway created
+service/gateway created
+pod/ditto-logs-initiator configured
+role.rbac.authorization.k8s.io/pod-reader created
+rolebinding.rbac.authorization.k8s.io/read-pods created
+Deploying Swagger UI...
+service/swagger-ui created
+deployment.apps/swagger-ui created
+Deploying Nginx...
+service/ditto created
+deployment.apps/nginx created
+Deployment completed successfully.
+
+I want you to know that when i deploy using python localhost:30080 does not show the ditto welcome page, but it shows when i run using shell script
