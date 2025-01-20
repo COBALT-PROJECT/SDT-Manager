@@ -35,6 +35,10 @@ swagger-ui-5f4ddfb595-zq6tl      1/1     Running     0          2m10s
 things-6c4d5684bb-mhfvq          1/1     Running     0          2m11s
 things-search-7df4f84ff7-v628n   1/1     Running     0          2m11s
 
+IMAGE MANAGEMENT
+Build the sdt main image with the help of the dockerfile by running the command "sudo docker build -t . <image name>"
+either push the image into dockerhub (as done here) or export the image from docker's images to the containerd image repository in k3s.
+
 step 4 -> in a new terminal run "kubectl apply -f sdt-pod-with-ditto-k3s.yaml"
 
 check if pod has been instantiated and added to the same namespace as the ditto pods
