@@ -1,0 +1,2 @@
+use api calls to instantiate and delete the sdt pod (but ditto pods are already running)
+dont use the plot_cdf.py (create a new script to read the csv file with time taken to instantiate and then plot the cdf)
