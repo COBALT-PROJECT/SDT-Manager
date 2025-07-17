@@ -3,6 +3,7 @@ import logging
 import threading
 import os
 from sdt_lifecycle_manager import SDT_LifeCycleManager
+from sdt_connector_manager import SDT_ConnectorManager
 from ccm_manager_interface import CCM_Manager_Interface
 from adapter import DTModelAdapter
 
@@ -25,6 +26,10 @@ class SDT_ManagerCore:
         # Initialize components
         self.lifecycle_manager = SDT_LifeCycleManager()
         LOGGER.info("SDT Lifecycle Manager has been instantiated")
+        
+        # Initialize SDT Connector Manager (independent IDS connector management)
+        self.connector_manager = SDT_ConnectorManager()
+        LOGGER.info("SDT Connector Manager has been instantiated")
         
         # Initialize adapter before CCM manager so it's available for the API
         self.sdt_adapter = DTModelAdapter()

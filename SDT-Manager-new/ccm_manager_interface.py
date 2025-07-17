@@ -15,26 +15,34 @@ from fastapi.responses import JSONResponse
 
 LOGGER = logging.getLogger(__name__)
 
+# Pydantic models defined outside the class to avoid linting warnings
+class DeploymentResponse(BaseModel):
+    """Response model for deployment operations"""
+    success: bool
+    message: str
+    pod_name: Optional[str] = None
+    identifier: Optional[str] = None
+
+class ConnectorResponse(BaseModel):
+    """Response model for connector operations"""
+    success: bool
+    message: str
+    deployment_name: Optional[str] = None
+    connector_id: Optional[str] = None
+
+class DeletionRequest(BaseModel):
+    """Request model for deletion operations"""
+    identifier: str
+
 class CCM_Manager_Interface:
     """North Bound Interface for SDT Manager using FastAPI"""
-    
-    class DeploymentResponse(BaseModel):
-        """Response model for deployment operations"""
-        success: bool
-        message: str
-        pod_name: Optional[str] = None
-        identifier: Optional[str] = None
-
-    class DeletionRequest(BaseModel):
-        """Request model for deletion operations"""
-        identifier: str
     
     def __init__(self, manager_core):
         """Initialize with reference to the SDT Manager Core"""
         self.manager_core = manager_core
         self.app = FastAPI(
             title="SDT Deployment API",
-            description="API for managing SDT deployments in Kubernetes"
+            description="API for managing SDT deployments and IDS connectors in Kubernetes"
         )
         self._setup_routes()
         LOGGER.info("CCM Manager Interface initialized")
@@ -42,7 +50,9 @@ class CCM_Manager_Interface:
     def _setup_routes(self):
         """Setup the API routes"""
         
-        @self.app.post("/deploy", response_model=self.DeploymentResponse)
+        # ===== SDT DEPLOYMENT ROUTES =====
+        
+        @self.app.post("/deploy", response_model=DeploymentResponse)
         async def deploy_sdt():
             """Deploy an SDT pod and service"""
             try:
@@ -50,7 +60,7 @@ class CCM_Manager_Interface:
                 pod_name, identifier = self.manager_core.lifecycle_manager.deploy()
                 
                 if pod_name and identifier:
-                    return self.DeploymentResponse(
+                    return DeploymentResponse(
                         success=True,
                         message="SDT deployment successful",
                         pod_name=pod_name,
@@ -62,8 +72,8 @@ class CCM_Manager_Interface:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Deployment failed: {str(e)}")
 
-        @self.app.post("/delete", response_model=self.DeploymentResponse)
-        async def delete_sdt(deletion_request: self.DeletionRequest):
+        @self.app.post("/delete", response_model=DeploymentResponse)
+        async def delete_sdt(deletion_request: DeletionRequest):
             """Delete an SDT deployment by identifier"""
             try:
                 # Verify the identifier exists in the pod map
@@ -84,7 +94,7 @@ class CCM_Manager_Interface:
                 )
                 
                 if deletion_results.get(deletion_request.identifier, False):
-                    return self.DeploymentResponse(
+                    return DeploymentResponse(
                         success=True,
                         message=f"Successfully deleted deployment with identifier {deletion_request.identifier}",
                         identifier=deletion_request.identifier
@@ -108,6 +118,191 @@ class CCM_Manager_Interface:
                 return {"deployments": deployments}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to list deployments: {str(e)}")
+
+        # ===== IDS CONNECTOR ROUTES =====
+
+        @self.app.post("/connector/deploy", response_model=ConnectorResponse)
+        async def deploy_connector(connector_type: str = Query(default="consumer", description="Type of connector to deploy")):
+            """Deploy an IDS connector"""
+            try:
+                # Deploy using the connector manager
+                deployment_name, connector_id = self.manager_core.connector_manager.deploy_connector(connector_type)
+                
+                if deployment_name and connector_id:
+                    return ConnectorResponse(
+                        success=True,
+                        message=f"IDS {connector_type} connector deployment successful",
+                        deployment_name=deployment_name,
+                        connector_id=connector_id
+                    )
+                else:
+                    raise HTTPException(status_code=500, detail="Connector deployment failed - no deployment information available")
+                    
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Connector deployment failed: {str(e)}")
+
+        @self.app.post("/connector/delete", response_model=ConnectorResponse)
+        async def delete_connector(deletion_request: DeletionRequest, 
+                                   cleanup_resources: bool = Query(default=True, description="Whether to cleanup associated resources")):
+            """Delete an IDS connector by identifier"""
+            try:
+                # Verify the connector exists
+                connector_exists = self.manager_core.connector_manager.check_connector_exists(deletion_request.identifier)
+                
+                if not connector_exists:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"No connector found with identifier {deletion_request.identifier}"
+                    )
+                
+                # Delete using the connector manager
+                deletion_results = self.manager_core.connector_manager.delete_connector(
+                    deletion_request.identifier, cleanup_resources
+                )
+                
+                if deletion_results.get(deletion_request.identifier, False):
+                    return ConnectorResponse(
+                        success=True,
+                        message=f"Successfully deleted connector with identifier {deletion_request.identifier}",
+                        connector_id=deletion_request.identifier
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to delete connector with identifier {deletion_request.identifier}"
+                    )
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Connector deletion failed: {str(e)}")
+
+        @self.app.get("/connectors")
+        async def list_connectors():
+            """List all current IDS connectors"""
+            try:
+                connectors = self.manager_core.connector_manager.list_connectors()
+                return {"connectors": connectors}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to list connectors: {str(e)}")
+
+        @self.app.get("/connector/{connector_id}")
+        async def get_connector_status(connector_id: str):
+            """Get detailed status of a specific connector"""
+            try:
+                status = self.manager_core.connector_manager.get_connector_status(connector_id)
+                
+                if status:
+                    return {"connector_status": status}
+                else:
+                    raise HTTPException(status_code=404, detail=f"No connector found with identifier {connector_id}")
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to get connector status: {str(e)}")
+
+        @self.app.get("/connector/{connector_id}/logs")
+        async def get_connector_logs(connector_id: str, lines: int = Query(default=100, description="Number of log lines to retrieve")):
+            """Get logs for a specific connector"""
+            try:
+                if not self.manager_core.connector_manager.check_connector_exists(connector_id):
+                    raise HTTPException(status_code=404, detail=f"No connector found with identifier {connector_id}")
+                
+                logs = self.manager_core.connector_manager.get_connector_logs(connector_id, lines)
+                
+                if logs:
+                    return {"connector_id": connector_id, "logs": logs}
+                else:
+                    return {"connector_id": connector_id, "logs": "No logs available"}
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to get connector logs: {str(e)}")
+
+        @self.app.post("/connector/{connector_id}/restart")
+        async def restart_connector(connector_id: str):
+            """Restart a specific connector deployment"""
+            try:
+                if not self.manager_core.connector_manager.check_connector_exists(connector_id):
+                    raise HTTPException(status_code=404, detail=f"No connector found with identifier {connector_id}")
+                
+                success = self.manager_core.connector_manager.restart_connector(connector_id)
+                
+                if success:
+                    return {"success": True, "message": f"Successfully restarted connector {connector_id}"}
+                else:
+                    raise HTTPException(status_code=500, detail=f"Failed to restart connector {connector_id}")
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to restart connector: {str(e)}")
+
+        @self.app.post("/connector/{connector_id}/scale")
+        async def scale_connector(connector_id: str, replicas: int = Query(description="Number of replicas to scale to")):
+            """Scale a specific connector deployment"""
+            try:
+                if not self.manager_core.connector_manager.check_connector_exists(connector_id):
+                    raise HTTPException(status_code=404, detail=f"No connector found with identifier {connector_id}")
+                
+                if replicas < 0:
+                    raise HTTPException(status_code=400, detail="Replicas must be a non-negative integer")
+                
+                success = self.manager_core.connector_manager.scale_connector(connector_id, replicas)
+                
+                if success:
+                    return {"success": True, "message": f"Successfully scaled connector {connector_id} to {replicas} replicas"}
+                else:
+                    raise HTTPException(status_code=500, detail=f"Failed to scale connector {connector_id}")
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to scale connector: {str(e)}")
+
+        @self.app.get("/connector/{connector_id}/events")
+        async def get_connector_events(connector_id: str):
+            """Get Kubernetes events for a specific connector"""
+            try:
+                if not self.manager_core.connector_manager.check_connector_exists(connector_id):
+                    raise HTTPException(status_code=404, detail=f"No connector found with identifier {connector_id}")
+                
+                events = self.manager_core.connector_manager.get_connector_events(connector_id)
+                
+                if events:
+                    return {"connector_id": connector_id, "events": events}
+                else:
+                    return {"connector_id": connector_id, "events": "No events found"}
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to get connector events: {str(e)}")
+
+        # ===== SYSTEM STATUS ROUTES =====
+
+        @self.app.get("/status")
+        async def get_system_status():
+            """Get overall system status including both SDT and IDS connector deployments"""
+            try:
+                sdt_deployments = self.manager_core.lifecycle_manager.list_available_deployments()
+                ids_connectors = self.manager_core.connector_manager.list_connectors()
+                
+                return {
+                    "sdt_deployments": {
+                        "count": len(sdt_deployments),
+                        "deployments": sdt_deployments
+                    },
+                    "ids_connectors": {
+                        "count": len(ids_connectors),
+                        "connectors": ids_connectors
+                    },
+                    "system_health": "healthy"
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to get system status: {str(e)}")
             
         @self.app.post("/api/SDT/create/")
         async def create_sdt(request: Request, 
