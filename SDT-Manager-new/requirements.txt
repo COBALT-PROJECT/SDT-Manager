@@ -1,8 +1,0 @@
-fastapi
-pydantic
-flask
-requests
-uvicorn
-cyclonedx-python-lib
-cyclonedx-python-lib[validation]
-gitpython
