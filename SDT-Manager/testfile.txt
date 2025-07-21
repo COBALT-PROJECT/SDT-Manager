@@ -1,2 +1,0 @@
-This is dummy test file to create a directory
-I am typing from laptop's VScode to test.

@@ -1,7 +1,9 @@
-# File: sdt_manager.py
+#sdt_manager.py
 import logging
 import subprocess
-from typing import Dict
+import csv
+import time
+from datetime import datetime
 from sdt_pod_deploy import SDTDeployer
 from delete_sdt_deployment import SDTDeploymentCleaner
 
@@ -12,78 +14,99 @@ class SDTManager:
         self.cleaner = SDTDeploymentCleaner()
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger(__name__)
+        self.csv_file = 'sdt_demokritos_create_time.csv'
+        self._init_csv()
+
+    def _init_csv(self):
+        """Initialize CSV file with headers if it doesn't exist."""
+        try:
+            with open(self.csv_file, 'x', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Timestamp', 'Identifier', 'Pod Name', 'Time Taken (seconds)'])
+        except FileExistsError:
+            pass
+
+    def _log_deployment_time(self, identifier, pod_name, time_taken):
+        """Log deployment timing information to CSV file."""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        with open(self.csv_file, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([timestamp, identifier, pod_name, f"{time_taken:.2f}"])
     
     def deploy(self):
-        """Deploys the SDT pod and service."""
+        """Deploys the SDT pod and service, tracking deployment time."""
+        start_time = time.time()
         self.deployer.deploy_pod()
+        
         if self.deployer.check_pod_running():
             self.deployer.deploy_service()
+            end_time = time.time()
+            time_taken = end_time - start_time
+
+            # Get the latest deployment info
+            if self.deployer.pod_map:
+                pod_name, identifier = next(iter(self.deployer.pod_map.items()))
+                self._log_deployment_time(identifier, pod_name, time_taken)
+                self.logger.info(f"Total deployment time: {time_taken:.2f} seconds")
         else:
             self.logger.error("Service deployment skipped because the pod is not running.")
 
-    def delete_sdt_deployment_by_id(self, identifier: str) -> Dict[str, bool]:
+    def delete_sdt_deployment_by_id(self, identifier: str) -> dict:
         """
-        Deletes a specific SDT deployment given its identifier.
+        Delete a specific deployment by its identifier without user interaction.
         
+        Args:
+            identifier (str): The identifier of the deployment to delete
+            
         Returns:
-            Dict[str, bool]: {identifier: True/False} indicating deletion success
+            Dict[str, bool]: Dictionary mapping identifier to deletion success status
         """
         pod_map = self.deployer.pod_map
-        # Find all pods with the matching identifier
-        matching_pods = [(pname, pid) for pname, pid in pod_map.items() if pid == identifier]
-
-        if not matching_pods:
-            # No pods found with that identifier
+        if not pod_map:
             return {identifier: False}
-
-        deletion_results = {}
-
-        # Attempt to delete each matching pod's deployment
-        for pod_name, _ in matching_pods:
-            deployment_name = self.cleaner.get_deployment_name_from_pod_name(pod_name)
-            success = self.cleaner.delete_deployment(deployment_name)
-
-            deletion_results[identifier] = success
-            if success:
-                # Remove the pod_name from pod_map if the deletion succeeded
-                del pod_map[pod_name]
-                self.logger.info(f"Removed {pod_name} from pod map after successful deletion.")
-
-        return deletion_results
+        
+        pod_name = None
+        for name, pod_id in pod_map.items():
+            if pod_id == identifier:
+                pod_name = name
+                break
+                
+        if not pod_name:
+            return {identifier: False}
+            
+        deployment_name = self.cleaner.get_deployment_name_from_pod_name(pod_name)
+        success = self.cleaner.delete_deployment(deployment_name)
+        
+        if success:
+            del self.deployer.pod_map[pod_name]
+            self.logger.info(f"Removed {pod_name} from pod map")
+            
+        return {identifier: success}
 
     def delete_sdt_deployment(self):
         """
-        Interactive/CLI version: shows available deployments and lets user choose
-        which to delete based on identifiers (not used by the API).
+        Shows available deployments and lets user choose which to delete based on identifiers.
         
         Returns:
             Dict[str, bool]: Dictionary mapping identifier to deletion success status
         """
         pod_map = self.deployer.pod_map
-        
         if not pod_map:
-            self.logger.warning("No deployments found in pod map to delete.")
             return {}
         
         deletion_results = self.cleaner.cleanup_deployment_by_identifier(pod_map)
         
-        # Remove deleted deployments from pod_map
         for identifier, success in deletion_results.items():
             if success:
-                pods_to_remove = [
-                    pod_name for pod_name, pod_id in self.deployer.pod_map.items() 
-                    if pod_id == identifier
-                ]
+                pods_to_remove = [pod_name for pod_name, pod_id in self.deployer.pod_map.items() 
+                                if pod_id == identifier]
                 for pod_name in pods_to_remove:
                     del self.deployer.pod_map[pod_name]
-                    self.logger.info(f"Removed {pod_name} from pod map.")
-        
+                    
         return deletion_results
 
 if __name__ == "__main__":
     manager = SDTManager()
-    
-    # Example usage from CLI:
     manager.deploy()
     deletion_results = manager.delete_sdt_deployment()
     for identifier, success in deletion_results.items():

@@ -4,7 +4,7 @@ import time
 import logging
 import uuid
 
-YAML_PATH = "/home/allen/k3s-SDT-Ditto/yaml_scripts/"
+YAML_PATH = "/home/ubuntu/k3s-SDT-Ditto/yaml_scripts/"
 
 class SDTDeployer:
     def __init__(self):
@@ -30,7 +30,7 @@ class SDTDeployer:
         self.logger.info(f"Deploying SDT pod with ID: {pod_id}")
         self.run_command(f"kubectl apply -f {YAML_PATH}sdt-pod-with-ditto-k3s.yaml")
         time.sleep(5)  # Give time for pod to be created
-        pod_name = self.get_pod_name()
+        pod_name = self.get_pod_name() #get the pod's name.
         if pod_name:
             self.pod_map[pod_name] = pod_id  # Store the pod name and ID mapping
             self.logger.info(f"Mapped Pod Name: {pod_name} to ID: {pod_id}")
@@ -38,7 +38,7 @@ class SDTDeployer:
     
     def get_pod_name(self):
         """Retrieves the name of the deployed SDT pod."""
-        return self.run_command("kubectl get pods -l app=sdt -o jsonpath='{.items[0].metadata.name}'")
+        return self.run_command("kubectl get pods -l app=sdt -o jsonpath='{.items[0].metadata.name}'") #will run the kubectl and return the result.
     
     def check_pod_running(self):
         """Checks if the SDT pod is running."""
