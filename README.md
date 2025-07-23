@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **SDT-Manager** is responsible for managing the lifecycle of the Security Digital Twin (SDT), which is deployed as a pod in a Kubernetes cluster. Its primary function is to orchestrate the information flow between the SDT components and the Cobalt Orchestrator.
+The **SDT-Manager** is responsible for managing the lifecycle of the Security Digital Twin (SDT) and IDS connectors, which are deployed as pods in a Kubernetes cluster of Eclipse Ditto. It's primary function is to orchestrate the information flow between the SDT components and the CCM Manager.
 
 This initial version includes scripts and manifests for:
 
@@ -16,6 +16,7 @@ This initial version includes scripts and manifests for:
 - [Installation](#installation)
   - [Prerequisites](#prerequisites)
   - [Environment Setup](#environment-setup)
+  - [Ditto Installation](#ditto-installation)
 - [Usage](#usage)
   - [Step-by-Step Workflow](#step-by-step-workflow)
   - [Image Management](#image-management)
@@ -46,3 +47,12 @@ To enable Kubernetes CLI in Python scripts, add the following line to your `.bas
 
 ```bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+### Ditto Installation
+Now to setup Eclipse Ditto software, follow the instructions:
+
+Run the command shown below in terminal of Ubuntu VM.
+
+```bash
+git clone https://github.com/Engineering-Research-and-Development/true-connector.git
+
