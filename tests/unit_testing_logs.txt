@@ -1,0 +1,100 @@
+allen@python-unit-testing:~/SDT-Manager6/tests$ python3 -m pytest -v
+======================================= test session starts ========================================
+platform linux -- Python 3.10.12, pytest-8.4.1, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/allen/SDT-Manager6/tests
+configfile: pytest.ini
+plugins: cov-6.2.1, mock-3.14.1, anyio-4.9.0, requests-mock-1.12.1, asyncio-1.1.0
+asyncio: mode=strict, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 19 items                                                                                 
+
+unit/test_adapter.py::test_adapter_init PASSED                                               [  5%]
+unit/test_adapter.py::test_send_to_controller_success PASSED                                 [ 10%]
+unit/test_adapter.py::test_validate_cyclonedx_smart_valid FAILED                             [ 15%]
+unit/test_adapter.py::test_from_cyclone_conversion PASSED                                    [ 21%]
+unit/test_ccm_manager_interface.py::test_create_sdt_endpoint PASSED                          [ 26%]
+unit/test_ccm_manager_interface.py::test_deploy_sdt_endpoint PASSED                          [ 31%]
+unit/test_ccm_manager_interface.py::test_list_connectors_endpoint PASSED                     [ 36%]
+unit/test_ids_connector.py::test_deploy_connector PASSED                                     [ 42%]
+unit/test_ids_connector.py::test_delete_connector PASSED                                     [ 47%]
+unit/test_ids_connector.py::test_list_available_connectors PASSED                            [ 52%]
+unit/test_sdt_connector_manager.py::test_deploy_connector PASSED                             [ 57%]
+unit/test_sdt_connector_manager.py::test_delete_connector PASSED                             [ 63%]
+unit/test_sdt_connector_manager.py::test_list_connectors PASSED                              [ 68%]
+unit/test_sdt_lifecycle_manager.py::test_deploy_pod PASSED                                   [ 73%]
+unit/test_sdt_lifecycle_manager.py::test_check_pod_running PASSED                            [ 78%]
+unit/test_sdt_lifecycle_manager.py::test_delete_deployment PASSED                            [ 84%]
+unit/test_sdt_manager_core.py::test_sdt_manager_core_init PASSED                             [ 89%]
+unit/test_sdt_manager_core.py::test_sdt_manager_core_start PASSED                            [ 94%]
+unit/test_sdt_manager_core.py::test_sdt_manager_core_stop PASSED                             [100%]
+
+============================================= FAILURES =============================================
+_______________________________ test_validate_cyclonedx_smart_valid ________________________________
+
+adapter = <adapter.DTModelAdapter object at 0x7ef31f0304c0>
+
+    def test_validate_cyclonedx_smart_valid(adapter):
+        valid_payload = {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.4",
+            "serialNumber": "urn:uuid:test"
+        }
+>       assert adapter.validate_cyclonedx_smart(valid_payload) is True
+E       AssertionError: assert False is True
+E        +  where False = validate_cyclonedx_smart({'bomFormat': 'CycloneDX', 'serialNumber': 'urn:uuid:test', 'specVersion': '1.4'})
+E        +    where validate_cyclonedx_smart = <adapter.DTModelAdapter object at 0x7ef31f0304c0>.validate_cyclonedx_smart
+
+unit/test_adapter.py:30: AssertionError
+========================================= warnings summary =========================================
+../../.local/lib/python3.10/site-packages/_pytest/config/__init__.py:1533
+  /home/allen/.local/lib/python3.10/site-packages/_pytest/config/__init__.py:1533: PytestConfigWarning: No files were found in testpaths; consider removing or adjusting your testpaths configuration. Searching recursively from the current directory instead.
+    self.args, self.args_source = self._decide_args(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+===================================== short test summary info ======================================
+FAILED unit/test_adapter.py::test_validate_cyclonedx_smart_valid - AssertionError: assert False is True
+============================= 1 failed, 18 passed, 1 warning in 26.25s =============================
+allen@python-unit-testing:~/SDT-Manager6/tests$ 
+allen@python-unit-testing:~/SDT-Manager6/tests$ 
+
+
+#Test 2
+
+allen@python-unit-testing:~/SDT-Manager6/tests$ python3 -m pytest -v
+======================================= test session starts ========================================
+platform linux -- Python 3.10.12, pytest-8.4.1, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/allen/SDT-Manager6/tests
+configfile: pytest.ini
+plugins: cov-6.2.1, mock-3.14.1, anyio-4.9.0, requests-mock-1.12.1, asyncio-1.1.0
+asyncio: mode=strict, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 19 items                                                                                 
+
+unit/test_adapter.py::test_adapter_init PASSED                                               [  5%]
+unit/test_adapter.py::test_send_to_controller_success PASSED                                 [ 10%]
+unit/test_adapter.py::test_validate_cyclonedx_smart_valid PASSED                             [ 15%]
+unit/test_adapter.py::test_from_cyclone_conversion PASSED                                    [ 21%]
+unit/test_ccm_manager_interface.py::test_create_sdt_endpoint PASSED                          [ 26%]
+unit/test_ccm_manager_interface.py::test_deploy_sdt_endpoint PASSED                          [ 31%]
+unit/test_ccm_manager_interface.py::test_list_connectors_endpoint PASSED                     [ 36%]
+unit/test_ids_connector.py::test_deploy_connector PASSED                                     [ 42%]
+unit/test_ids_connector.py::test_delete_connector PASSED                                     [ 47%]
+unit/test_ids_connector.py::test_list_available_connectors PASSED                            [ 52%]
+unit/test_sdt_connector_manager.py::test_deploy_connector PASSED                             [ 57%]
+unit/test_sdt_connector_manager.py::test_delete_connector PASSED                             [ 63%]
+unit/test_sdt_connector_manager.py::test_list_connectors PASSED                              [ 68%]
+unit/test_sdt_lifecycle_manager.py::test_deploy_pod PASSED                                   [ 73%]
+unit/test_sdt_lifecycle_manager.py::test_check_pod_running PASSED                            [ 78%]
+unit/test_sdt_lifecycle_manager.py::test_delete_deployment PASSED                            [ 84%]
+unit/test_sdt_manager_core.py::test_sdt_manager_core_init PASSED                             [ 89%]
+unit/test_sdt_manager_core.py::test_sdt_manager_core_start PASSED                            [ 94%]
+unit/test_sdt_manager_core.py::test_sdt_manager_core_stop PASSED                             [100%]
+
+========================================= warnings summary =========================================
+../../.local/lib/python3.10/site-packages/_pytest/config/__init__.py:1533
+  /home/allen/.local/lib/python3.10/site-packages/_pytest/config/__init__.py:1533: PytestConfigWarning: No files were found in testpaths; consider removing or adjusting your testpaths configuration. Searching recursively from the current directory instead.
+    self.args, self.args_source = self._decide_args(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================== 19 passed, 1 warning in 26.96s ==================================
+allen@python-unit-testing:~/SDT-Manager6/tests$ 

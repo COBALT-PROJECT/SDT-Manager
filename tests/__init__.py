@@ -1,0 +1,1 @@
+#to run the python unit testing of the entire sdt manager component as a module, run: python3 -m pytest -v (dont use virtual environment)
