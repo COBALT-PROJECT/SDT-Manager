@@ -183,6 +183,9 @@ Scaling:
 Termination:
   - Select the API call of type POST with endpoint '/connector/delete' and provide the connector id as a query string for the API call to delete the desired ids connector pod.
 
+Provider and Consumer Pods synchronization:
+  - Go to the ids-sync-service folder and execute build-and-deploy.sh file (read the readme.md file for detailed information on information routing between provider and consumer pods)
+
 
 
 

@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: ids-sync-service-monitor
+  namespace: default
+  labels:
+    app: ids-sync-service
+    component: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: ids-sync-service
+  endpoints:
+  - port: health
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-ids-sync
+  namespace: default
+  labels:
+    grafana_dashboard: "1"
+data:
+  ids-sync-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "IDS Sync Service Dashboard",
+        "tags": ["ids", "sync"],
+        "style": "dark",
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Resources Synced",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "ids_sync_resources_synced_total",
+                "legendFormat": "Total Synced"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "displayMode": "list",
+                  "orientation": "horizontal"
+                },
+                "mappings": [],
+                "thresholds": {
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            },
+            "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "id": 2,
+            "title": "Service Status",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "ids_sync_service_up",
+                "legendFormat": "Service Up"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "mappings": [
+                  {
+                    "options": {
+                      "0": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "Down"
+                      },
+                      "1": {
+                        "color": "green",
+                        "index": 1,
+                        "text": "Up"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ],
+                "thresholds": {
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            },
+            "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 0
+            }
+          },
+          {
+            "id": 3,
+            "title": "Sync Errors",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(ids_sync_errors_total[5m])",
+                "legendFormat": "Error Rate"
+              }
+            ],
+            "gridPos": {
+              "h": 8,
+              "w": 24,
+              "x": 0,
+              "y": 8
+            }
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "timepicker": {},
+        "templating": {
+          "list": []
+        },
+        "version": 1
+      }
+    }
