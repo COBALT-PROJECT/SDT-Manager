@@ -1,0 +1,41 @@
+# Sample SDT Pod YAML - Replace with your actual file
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdt-deployment
+  namespace: default
+  labels:
+    app: sdt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sdt
+  template:
+    metadata:
+      labels:
+        app: sdt
+    spec:
+      containers:
+        - name: sdt-container
+          image: arq101/sdt-main-image:v0.2.1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000 #for sdt interface
+            - containerPort: 1883 #for mosquitto mqtt broker
+          env:
+            - name: DITTO_HOST
+              value: "ditto"
+            - name: DITTO_PORT
+              value: "80"
+            - name: MQTT_BROKER_HOST
+              value: "sdt-service"
+            - name: CLOUDITOR_HOST
+              value: "10.160.101.137"
+          volumeMounts:
+            - name: sdt-output
+              mountPath: /app/sdt_output
+      volumes:
+        - name: sdt-output
+          emptyDir: {}
+      restartPolicy: Always

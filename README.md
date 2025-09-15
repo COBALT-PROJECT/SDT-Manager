@@ -21,6 +21,8 @@ This version of the SDT Manager includes scripts and manifests for:
 - [Features](#features)
   - [SDT pod lifecycle management](#sdt-pod-lifecycle-management)
   - [IDS connector pods lifecycle management](#ids-connector-pods-lifecycle-management)
+- [Containerization] (#containerization)
+  - [SDT Manager containerized deployment and lifecycle management](#deployment)
 
 
 ## Installation
@@ -185,6 +187,44 @@ Termination:
 
 Provider and Consumer Pods synchronization:
   - Go to the ids-sync-service folder and execute build-and-deploy.sh file (read the readme.md file for detailed information on information routing between provider and consumer pods)
+
+## Containerization
+
+### deployment
+
+Follow the steps to build and deploy the SDT Manager as a container:
+
+```bash
+cd ~/docker
+```
+
+Run the following commands to build and deploy the SDT Manager as a container:
+
+```bash
+# Make scripts executable
+chmod +x build-and-deploy.sh build.sh deploy.sh cleanup.sh
+
+# Build the image
+./build.sh
+
+# Deploy the container  
+./deploy.sh
+
+# Stop and cleanup (basic)
+./cleanup.sh
+
+# Stop and cleanup everything
+./cleanup.sh --all
+
+# Force cleanup without confirmation
+./cleanup.sh --all --force
+```
+NOTE: In the docker-compose.yml file set the paths to mount the volumes of Trueconnector yaml files to enable instantiation, lifecycle management of IDS pods (consumer and provider)
+
+
+
+
+
 
 
 
