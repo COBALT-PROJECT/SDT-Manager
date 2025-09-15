@@ -21,7 +21,7 @@ This version of the SDT Manager includes scripts and manifests for:
 - [Features](#features)
   - [SDT pod lifecycle management](#sdt-pod-lifecycle-management)
   - [IDS connector pods lifecycle management](#ids-connector-pods-lifecycle-management)
-- [Containerization] (#containerization)
+- [Containerization](#containerization)
   - [SDT Manager containerized deployment and lifecycle management](#deployment)
 
 
