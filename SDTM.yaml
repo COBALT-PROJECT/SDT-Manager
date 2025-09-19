@@ -1,0 +1,206 @@
+openapi: 3.0.3
+info:
+  title: Digital Twin Management API
+  description: OpenAPI specification for managing the lifecycle of digital twins based on ETSI ZSM principles.
+  version: 1.0.0
+
+paths:
+  /digital-twins:
+    post:
+      summary: Create a new digital twin
+      operationId: createDigitalTwin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                twinId:
+                  type: string
+                  description: Unique identifier for the digital twin
+                modelType:
+                  type: string
+                  description: Type of the digital twin model
+                initialParameters:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Digital twin successfully created
+        '400':
+          description: Invalid input data
+
+  /digital-twins/{twinId}:
+    get:
+      summary: Retrieve a digital twin
+      operationId: getDigitalTwin
+      parameters:
+        - name: twinId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Digital twin data retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  twinId:
+                    type: string
+                  modelType:
+                    type: string
+                  currentState:
+                    type: object
+                    additionalProperties: true
+                  metadata:
+                    type: object
+                    properties:
+                      createdAt:
+                        type: string
+                        format: date-time
+                      lastUpdated:
+                        type: string
+                        format: date-time
+        '404':
+          description: Digital twin not found
+    
+    put:
+      summary: Update a digital twin
+      operationId: updateDigitalTwin
+      parameters:
+        - name: twinId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                updateParameters:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Digital twin updated successfully
+        '400':
+          description: Invalid update data
+        '404':
+          description: Digital twin not found
+    
+    delete:
+      summary: Delete a digital twin
+      operationId: deleteDigitalTwin
+      parameters:
+        - name: twinId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Digital twin deleted successfully
+        '404':
+          description: Digital twin not found
+
+  /digital-twins/{twinId}/synchronize:
+    post:
+      summary: Synchronize a digital twin with its physical counterpart
+      operationId: synchronizeDigitalTwin
+      parameters:
+        - name: twinId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                syncParameters:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Synchronization successful
+        '400':
+          description: Invalid synchronization data
+        '404':
+          description: Digital twin not found
+
+  /digital-twins/{twinId}/analytics:
+    get:
+      summary: Retrieve analytical data for a digital twin
+      operationId: getDigitalTwinAnalytics
+      parameters:
+        - name: twinId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Analytics data retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  analyticsData:
+                    type: object
+                    additionalProperties: true
+        '404':
+          description: Digital twin not found
+
+  /digital-twins/{twinId}/subscribe:
+    post:
+      summary: Subscribe to digital twin events
+      operationId: subscribeToDigitalTwinEvents
+      parameters:
+        - name: twinId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                eventTypes:
+                  type: array
+                  items:
+                    type: string
+                callbackUrl:
+                  type: string
+      responses:
+        '201':
+          description: Subscription created successfully
+        '400':
+          description: Invalid subscription data
+        '404':
+          description: Digital twin not found
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: /oauth/token
+          scopes: {}
+
+security:
+  - OAuth2: []
