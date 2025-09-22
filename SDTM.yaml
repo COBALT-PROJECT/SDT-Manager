@@ -5,10 +5,10 @@ info:
   version: 1.0.0
 
 paths:
-  /digital-twins:
+  /deploy:
     post:
-      summary: Create a new digital twin
-      operationId: createDigitalTwin
+      summary: Create and deploy a new digital twin (i.e: SDT)
+      operationId: Deploy Sdt
       requestBody:
         required: true
         content:
@@ -18,7 +18,7 @@ paths:
               properties:
                 twinId:
                   type: string
-                  description: Unique identifier for the digital twin
+                  description: Unique hexadecimal identifier for the digital twin
                 modelType:
                   type: string
                   description: Type of the digital twin model
@@ -27,14 +27,14 @@ paths:
                   additionalProperties: true
       responses:
         '201':
-          description: Digital twin successfully created
+          description: SDT deployment successful
         '400':
           description: Invalid input data
 
-  /digital-twins/{twinId}:
+  /deployments:
     get:
-      summary: Retrieve a digital twin
-      operationId: getDigitalTwin
+      summary: Retrieve all deployed digital twins and their respective identifiers 
+      operationId: getDigitalTwins
       parameters:
         - name: twinId
           in: path
@@ -68,7 +68,7 @@ paths:
         '404':
           description: Digital twin not found
     
-    put:
+    put: #must implement in the sdt manager
       summary: Update a digital twin
       operationId: updateDigitalTwin
       parameters:
@@ -99,7 +99,7 @@ paths:
       summary: Delete a digital twin
       operationId: deleteDigitalTwin
       parameters:
-        - name: twinId
+        - name: twinId/hexadecimal identifier
           in: path
           required: true
           schema:
@@ -110,7 +110,7 @@ paths:
         '404':
           description: Digital twin not found
 
-  /digital-twins/{twinId}/synchronize:
+  /digital-twins/{twinId}/synchronize: #must implement
     post:
       summary: Synchronize a digital twin with its physical counterpart
       operationId: synchronizeDigitalTwin
@@ -138,7 +138,7 @@ paths:
         '404':
           description: Digital twin not found
 
-  /digital-twins/{twinId}/analytics:
+  /digital-twins/{twinId}/analytics: #must implement
     get:
       summary: Retrieve analytical data for a digital twin
       operationId: getDigitalTwinAnalytics
@@ -162,7 +162,7 @@ paths:
         '404':
           description: Digital twin not found
 
-  /digital-twins/{twinId}/subscribe:
+  /digital-twins/{twinId}/subscribe: #must implement
     post:
       summary: Subscribe to digital twin events
       operationId: subscribeToDigitalTwinEvents
@@ -203,4 +203,5 @@ components:
           scopes: {}
 
 security:
+
   - OAuth2: []
