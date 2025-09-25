@@ -5,7 +5,7 @@ info:
   version: 1.0.0
 
 paths:
-  /api/SDTM/deploy:
+  /api/SDTM/digital-twin/deploy:
     post:
       summary: Create and deploy a new digital twin (i.e: SDT)
       operationId: Deploy Sdt
@@ -31,7 +31,7 @@ paths:
         '400':
           description: Invalid input data
 
-  /api/SDTM/deployments:
+  /api/SDTM/digital-twin/:
     get:
       summary: Retrieve all deployed digital twins and their respective identifiers 
       operationId: getDigitalTwins
@@ -68,7 +68,7 @@ paths:
         '404':
           description: Digital twin not found
 
-    /api/SDTM/deployments/{identifier of SDT}:
+  /api/SDTM/digital-twin/{twinId}:
     get:
       summary: Retrieve data of a specific SDT/digital twin
       operationId: getDigitalTwins
@@ -136,7 +136,7 @@ paths:
       summary: Delete a digital twin
       operationId: deleteDigitalTwin
       parameters:
-        - name: twinId/hexadecimal identifier
+        - name: twinId
           in: path
           required: true
           schema:
@@ -147,9 +147,9 @@ paths:
         '404':
           description: Digital twin not found
 
-  /digital-twins/{twinId}/synchronize: #must implement
+  /api/SDTM/digital-twin/{twinId}/synchronize: 
     post:
-      summary: Synchronize a digital twin with its physical counterpart
+      summary: Synchronize a digital twin with its physical counterpart / Issued by SDT
       operationId: synchronizeDigitalTwin
       parameters:
         - name: twinId
@@ -175,60 +175,7 @@ paths:
         '404':
           description: Digital twin not found
 
-  /digital-twins/{twinId}/analytics: #must implement
-    get:
-      summary: Retrieve analytical data for a digital twin
-      operationId: getDigitalTwinAnalytics
-      parameters:
-        - name: twinId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Analytics data retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  analyticsData:
-                    type: object
-                    additionalProperties: true
-        '404':
-          description: Digital twin not found
-
-  /digital-twins/{twinId}/subscribe: #must implement
-    post:
-      summary: Subscribe to digital twin events
-      operationId: subscribeToDigitalTwinEvents
-      parameters:
-        - name: twinId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                eventTypes:
-                  type: array
-                  items:
-                    type: string
-                callbackUrl:
-                  type: string
-      responses:
-        '201':
-          description: Subscription created successfully
-        '400':
-          description: Invalid subscription data
-        '404':
-          description: Digital twin not found
+ 
 
 components:
   securitySchemes:
@@ -242,4 +189,5 @@ components:
 security:
 
   - OAuth2: []
+
 
