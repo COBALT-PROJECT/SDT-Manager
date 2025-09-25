@@ -5,7 +5,7 @@ info:
   version: 1.0.0
 
 paths:
-  /deploy:
+  /api/SDTM/deploy:
     post:
       summary: Create and deploy a new digital twin (i.e: SDT)
       operationId: Deploy Sdt
@@ -31,9 +31,46 @@ paths:
         '400':
           description: Invalid input data
 
-  /deployments:
+  /api/SDTM/deployments:
     get:
       summary: Retrieve all deployed digital twins and their respective identifiers 
+      operationId: getDigitalTwins
+      parameters:
+        - name: twinId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Digital twin data retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  twinId:
+                    type: string
+                  modelType:
+                    type: string
+                  currentState:
+                    type: object
+                    additionalProperties: true
+                  metadata:
+                    type: object
+                    properties:
+                      createdAt:
+                        type: string
+                        format: date-time
+                      lastUpdated:
+                        type: string
+                        format: date-time
+        '404':
+          description: Digital twin not found
+
+    /api/SDTM/deployments/{identifier of SDT}:
+    get:
+      summary: Retrieve data of a specific SDT/digital twin
       operationId: getDigitalTwins
       parameters:
         - name: twinId
@@ -205,3 +242,4 @@ components:
 security:
 
   - OAuth2: []
+
