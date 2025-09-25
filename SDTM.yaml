@@ -5,10 +5,10 @@ info:
   version: 1.0.0
 
 paths:
-  /api/SDTM/digital-twin/deploy:
+  /api/SDTM/digital-twin:
     post:
-      summary: Create and deploy a new digital twin (i.e: SDT)
-      operationId: Deploy Sdt
+      summary: Create a new digital twin
+      operationId: createDigitalTwin
       requestBody:
         required: true
         content:
@@ -18,7 +18,7 @@ paths:
               properties:
                 twinId:
                   type: string
-                  description: Unique hexadecimal identifier for the digital twin
+                  description: Unique identifier for the digital twin
                 modelType:
                   type: string
                   description: Type of the digital twin model
@@ -27,51 +27,14 @@ paths:
                   additionalProperties: true
       responses:
         '201':
-          description: SDT deployment successful
+          description: Digital twin successfully created
         '400':
           description: Invalid input data
 
-  /api/SDTM/digital-twin/:
-    get:
-      summary: Retrieve all deployed digital twins and their respective identifiers 
-      operationId: getDigitalTwins
-      parameters:
-        - name: twinId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Digital twin data retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  twinId:
-                    type: string
-                  modelType:
-                    type: string
-                  currentState:
-                    type: object
-                    additionalProperties: true
-                  metadata:
-                    type: object
-                    properties:
-                      createdAt:
-                        type: string
-                        format: date-time
-                      lastUpdated:
-                        type: string
-                        format: date-time
-        '404':
-          description: Digital twin not found
-
   /api/SDTM/digital-twin/{twinId}:
     get:
-      summary: Retrieve data of a specific SDT/digital twin
-      operationId: getDigitalTwins
+      summary: Retrieve a digital twin
+      operationId: getDigitalTwin
       parameters:
         - name: twinId
           in: path
@@ -105,7 +68,7 @@ paths:
         '404':
           description: Digital twin not found
     
-    put: #must implement in the sdt manager
+    put:
       summary: Update a digital twin
       operationId: updateDigitalTwin
       parameters:
@@ -147,9 +110,9 @@ paths:
         '404':
           description: Digital twin not found
 
-  /api/SDTM/digital-twin/{twinId}/synchronize: 
+  /api/SDTM/digital-twin/{twinId}/synchronize:
     post:
-      summary: Synchronize a digital twin with its physical counterpart / Issued by SDT
+      summary: Synchronize a digital twin with its physical counterpart
       operationId: synchronizeDigitalTwin
       parameters:
         - name: twinId
@@ -175,7 +138,6 @@ paths:
         '404':
           description: Digital twin not found
 
- 
 
 components:
   securitySchemes:
@@ -187,7 +149,4 @@ components:
           scopes: {}
 
 security:
-
   - OAuth2: []
-
-
