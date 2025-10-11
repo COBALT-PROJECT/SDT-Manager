@@ -13,12 +13,12 @@ class SDT_ConnectorManager:
         self.ids_connector = IDS_Connector()
         LOGGER.info("SDT Connector Manager initialized")
     
-    def deploy_connector(self, connector_type: str = "consumer") -> Tuple[Optional[str], Optional[str]]:
+    def deploy_connector(self, connector_type: str = "ids_sdt") -> Tuple[Optional[str], Optional[str]]:
         """
         Deploy an IDS connector.
         
         Args:
-            connector_type (str): Type of connector to deploy (default: "consumer")
+            connector_type (str): Type of connector to deploy (default: "ids_sdt")
             
         Returns:
             Tuple[Optional[str], Optional[str]]: (deployment_name, connector_id) or (None, None) if failed

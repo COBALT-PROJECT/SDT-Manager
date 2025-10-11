@@ -4,7 +4,7 @@ import threading
 import os
 from sdt_lifecycle_manager import SDT_LifeCycleManager
 from sdt_connector_manager import SDT_ConnectorManager
-from ccm_manager_interface import CCM_Manager_Interface
+from sdt_manager_interface import SDT_Manager_Interface
 from adapter import DTModelAdapter
 
 # Configure logging
@@ -19,7 +19,7 @@ class SDT_ManagerCore:
         
         # Get configuration from environment variables
         sdt_interface_host = os.environ.get('SDT_INTERFACE_HOST', 'localhost')
-        sdt_interface_port = os.environ.get('SDT_INTERFACE_PORT', '30008')
+        sdt_interface_port = int(os.environ.get('SDT_INTERFACE_PORT', '30008'))
         api_server_host = os.environ.get('API_SERVER_HOST', '0.0.0.0')
         api_server_port = int(os.environ.get('API_SERVER_PORT', '8008'))
         
@@ -35,9 +35,9 @@ class SDT_ManagerCore:
         self.sdt_adapter = DTModelAdapter()
         LOGGER.info(f"Adapter for DT Model has been instantiated with host={sdt_interface_host}, port={sdt_interface_port}")
         
-        # Initialize NBI server (CCM Manager Interface)
-        self.ccm_manager = CCM_Manager_Interface(self)
-        LOGGER.info(f"CCM Manager API has been instantiated and will listen on {api_server_host}:{api_server_port}")
+        # Initialize NBI server (SDT Manager Interface)
+        self.sdt_manager = SDT_Manager_Interface(self)
+        LOGGER.info(f"SDT Manager API has been instantiated and will listen on {api_server_host}:{api_server_port}")
 
         # Store configuration
         self.config = {
@@ -58,7 +58,7 @@ class SDT_ManagerCore:
         LOGGER.info("Starting SDT Manager...")
         
         # Start API server
-        self.api_thread = self.ccm_manager.start_server_thread(
+        self.api_thread = self.sdt_manager.start_server_thread(
             host=self.config['api_server_host'], 
             port=self.config['api_server_port']
         )

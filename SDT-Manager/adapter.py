@@ -10,8 +10,8 @@ from cyclonedx.validation import make_schemabased_validator
 from cyclonedx.validation.json import JsonValidator, JsonStrictValidator
 
 
-SDT_INTERFACE_HOST = "localhost" # Default, can be overridden by environment variables
-SDT_INTERFACE_PORT = "30008"  # Default, can be overridden by environment variables
+SDT_INTERFACE_HOST = os.environ.get("SDT_INTERFACE_HOST", "localhost")  # Default, can be overridden by environment variables
+SDT_INTERFACE_PORT = int(os.environ.get("SDT_INTERFACE_PORT", "30008"))  # Default, can be overridden by environment variables
 
 import logging
 

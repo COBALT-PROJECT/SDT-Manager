@@ -1,4 +1,4 @@
-# File: ccm_manager_interface.py
+# File: sdt_manager_interface.py
 
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import JSONResponse
@@ -34,8 +34,8 @@ class DeletionRequest(BaseModel):
     """Request model for deletion operations"""
     identifier: str
 
-class CCM_Manager_Interface:
-    """North Bound Interface for SDT Manager using FastAPI"""
+class SDT_Manager_Interface:
+    """North Bound Interface for SDT Manager using FastAPI,it faces CCM Manager"""
     
     def __init__(self, manager_core):
         """Initialize with reference to the SDT Manager Core"""
@@ -45,14 +45,14 @@ class CCM_Manager_Interface:
             description="API for managing SDT deployments and IDS connectors in Kubernetes"
         )
         self._setup_routes()
-        LOGGER.info("CCM Manager Interface initialized")
+        LOGGER.info("SDT Manager Interface initialized")
     
     def _setup_routes(self):
         """Setup the API routes"""
         
         # ===== SDT DEPLOYMENT ROUTES =====
-        
-        @self.app.post("/deploy", response_model=DeploymentResponse)
+
+        @self.app.post("/api/SDTM/digital-twin", response_model=DeploymentResponse, summary="Deploy an SDT instance") #create SDT instance
         async def deploy_sdt():
             """Deploy an SDT pod and service"""
             try:
@@ -72,7 +72,7 @@ class CCM_Manager_Interface:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Deployment failed: {str(e)}")
 
-        @self.app.post("/delete", response_model=DeploymentResponse)
+        @self.app.delete("/api/SDTM/digital-twin/{twinId}", response_model=DeploymentResponse, summary="Delete an SDT instance by using its identifier")
         async def delete_sdt(deletion_request: DeletionRequest):
             """Delete an SDT deployment by identifier"""
             try:
@@ -110,19 +110,181 @@ class CCM_Manager_Interface:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Deletion failed: {str(e)}")
 
-        @self.app.get("/deployments")
-        async def list_deployments():
-            """List all current SDT deployments"""
+        @self.app.get("/api/SDTM/digital-twin/{twinId}", 
+                      summary="Retrieve a digital twin",
+                      response_model=None)  # Using None to allow custom response structure
+        async def get_digital_twin(twinId: str):
+            """
+            Retrieve a digital twin by its hexadecimal identifier.
+            
+            Args:
+                twinId (str): The hexadecimal identifier of the digital twin
+                
+            Returns:
+                JSONResponse: Digital twin data if found, 404 error otherwise
+            """
             try:
-                deployments = self.manager_core.lifecycle_manager.list_available_deployments()
-                return {"deployments": deployments}
+                # Search for the pod with the given identifier in the pod_map
+                matching_pod = None
+                pod_name = None
+                
+                for pname, pid in self.manager_core.lifecycle_manager.pod_map.items():
+                    if pid == twinId:
+                        matching_pod = pid
+                        pod_name = pname
+                        break
+                
+                if not matching_pod:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"Digital twin not found with identifier {twinId}"
+                    )
+                
+                # Get deployment name from pod name
+                deployment_name = self.manager_core.lifecycle_manager.get_deployment_name_from_pod_name(pod_name)
+                
+                # Get current pod status using kubectl
+                pod_status_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.phase}}'"
+                pod_status = self.manager_core.lifecycle_manager.run_command(pod_status_cmd) or "Unknown"
+                
+                # Get pod creation timestamp
+                creation_time_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.metadata.creationTimestamp}}'"
+                creation_time = self.manager_core.lifecycle_manager.run_command(creation_time_cmd) or ""
+                
+                # Get last transition time (last update)
+                last_update_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.conditions[-1].lastTransitionTime}}'"
+                last_update = self.manager_core.lifecycle_manager.run_command(last_update_cmd) or creation_time
+                
+                # Get additional pod details for current state
+                pod_ip_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.podIP}}'"
+                pod_ip = self.manager_core.lifecycle_manager.run_command(pod_ip_cmd) or "N/A"
+                
+                node_name_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.spec.nodeName}}'"
+                node_name = self.manager_core.lifecycle_manager.run_command(node_name_cmd) or "N/A"
+                
+                # Get container statuses
+                container_status_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.containerStatuses[0].ready}}'"
+                container_ready = self.manager_core.lifecycle_manager.run_command(container_status_cmd) or "false"
+                
+                # Construct the response according to the schema
+                response = {
+                    "twinId": twinId,
+                    "modelType": "SDT",  # Static as this is SDT Manager
+                    "currentState": {
+                        "podName": pod_name,
+                        "deploymentName": deployment_name,
+                        "status": pod_status,
+                        "podIP": pod_ip,
+                        "nodeName": node_name,
+                        "containerReady": container_ready.lower() == "true"
+                    },
+                    "metadata": {
+                        "createdAt": creation_time,
+                        "lastUpdated": last_update
+                    }
+                }
+                
+                return JSONResponse(content=response, status_code=200)
+                
+            except HTTPException:
+                raise
             except Exception as e:
+                LOGGER.error(f"Error retrieving digital twin {twinId}: {str(e)}")
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Failed to retrieve digital twin: {str(e)}"
+                )
+
+        # Replace the existing list_deployments method in _setup_routes with this updated version
+
+        @self.app.get("/api/SDTM//deployments", summary="List all current SDT deployments")
+        async def list_deployments():
+            """
+            List all current SDT deployments with detailed information.
+            Returns the same structure as the individual digital twin endpoint.
+            """
+            try:
+                deployments = []
+                
+                # Iterate through all pods in the pod_map
+                for pod_name, twin_id in self.manager_core.lifecycle_manager.pod_map.items():
+                    try:
+                        # Get deployment name from pod name
+                        deployment_name = self.manager_core.lifecycle_manager.get_deployment_name_from_pod_name(pod_name)
+                        
+                        # Get current pod status using kubectl
+                        pod_status_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.phase}}'"
+                        pod_status = self.manager_core.lifecycle_manager.run_command(pod_status_cmd) or "Unknown"
+                        
+                        # Get pod creation timestamp
+                        creation_time_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.metadata.creationTimestamp}}'"
+                        creation_time = self.manager_core.lifecycle_manager.run_command(creation_time_cmd) or ""
+                        
+                        # Get last transition time (last update)
+                        last_update_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.conditions[-1].lastTransitionTime}}'"
+                        last_update = self.manager_core.lifecycle_manager.run_command(last_update_cmd) or creation_time
+                        
+                        # Get additional pod details for current state
+                        pod_ip_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.podIP}}'"
+                        pod_ip = self.manager_core.lifecycle_manager.run_command(pod_ip_cmd) or "N/A"
+                        
+                        node_name_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.spec.nodeName}}'"
+                        node_name = self.manager_core.lifecycle_manager.run_command(node_name_cmd) or "N/A"
+                        
+                        # Get container statuses
+                        container_status_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.containerStatuses[0].ready}}'"
+                        container_ready = self.manager_core.lifecycle_manager.run_command(container_status_cmd) or "false"
+                        
+                        # Construct the deployment info in the same format as get_digital_twin
+                        deployment_info = {
+                            "twinId": twin_id,
+                            "modelType": "SDT",  # Static as this is SDT Manager
+                            "currentState": {
+                                "podName": pod_name,
+                                "deploymentName": deployment_name,
+                                "status": pod_status,
+                                "podIP": pod_ip,
+                                "nodeName": node_name,
+                                "containerReady": container_ready.lower() == "true"
+                            },
+                            "metadata": {
+                                "createdAt": creation_time,
+                                "lastUpdated": last_update
+                            }
+                        }
+                        
+                        deployments.append(deployment_info)
+                        
+                    except Exception as e:
+                        LOGGER.error(f"Error getting details for pod {pod_name}: {str(e)}")
+                        # Add basic info even if detailed fetch fails
+                        deployments.append({
+                            "twinId": twin_id,
+                            "modelType": "SDT",
+                            "currentState": {
+                                "podName": pod_name,
+                                "deploymentName": "unknown",
+                                "status": "error",
+                                "podIP": "N/A",
+                                "nodeName": "N/A",
+                                "containerReady": False
+                            },
+                            "metadata": {
+                                "createdAt": "",
+                                "lastUpdated": ""
+                            }
+                        })
+                
+                return {"deployments": deployments}
+                
+            except Exception as e:
+                LOGGER.error(f"Failed to list deployments: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Failed to list deployments: {str(e)}")
 
         # ===== IDS CONNECTOR ROUTES =====
 
         @self.app.post("/connector/deploy", response_model=ConnectorResponse)
-        async def deploy_connector(connector_type: str = Query(default="consumer", description="Type of connector to deploy")):
+        async def deploy_connector(connector_type: str = Query(default="ids_sdt", description="Type of connector to deploy")):
             """Deploy an IDS connector"""
             try:
                 # Deploy using the connector manager
@@ -141,7 +303,7 @@ class CCM_Manager_Interface:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Connector deployment failed: {str(e)}")
 
-        @self.app.post("/connector/delete", response_model=ConnectorResponse)
+        @self.app.delete("/connector/delete", response_model=ConnectorResponse)
         async def delete_connector(deletion_request: DeletionRequest, 
                                    cleanup_resources: bool = Query(default=True, description="Whether to cleanup associated resources")):
             """Delete an IDS connector by identifier"""
@@ -202,9 +364,10 @@ class CCM_Manager_Interface:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to get connector status: {str(e)}")
 
+        """
         @self.app.get("/connector/{connector_id}/logs")
         async def get_connector_logs(connector_id: str, lines: int = Query(default=100, description="Number of log lines to retrieve")):
-            """Get logs for a specific connector"""
+            #Get logs for a specific connector
             try:
                 if not self.manager_core.connector_manager.check_connector_exists(connector_id):
                     raise HTTPException(status_code=404, detail=f"No connector found with identifier {connector_id}")
@@ -220,10 +383,11 @@ class CCM_Manager_Interface:
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to get connector logs: {str(e)}")
-
+        """
+        """
         @self.app.post("/connector/{connector_id}/restart")
         async def restart_connector(connector_id: str):
-            """Restart a specific connector deployment"""
+            #Restart a specific connector deployment
             try:
                 if not self.manager_core.connector_manager.check_connector_exists(connector_id):
                     raise HTTPException(status_code=404, detail=f"No connector found with identifier {connector_id}")
@@ -239,10 +403,12 @@ class CCM_Manager_Interface:
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to restart connector: {str(e)}")
+        """
 
+        """
         @self.app.post("/connector/{connector_id}/scale")
         async def scale_connector(connector_id: str, replicas: int = Query(description="Number of replicas to scale to")):
-            """Scale a specific connector deployment"""
+            #Scale a specific connector deployment
             try:
                 if not self.manager_core.connector_manager.check_connector_exists(connector_id):
                     raise HTTPException(status_code=404, detail=f"No connector found with identifier {connector_id}")
@@ -261,10 +427,12 @@ class CCM_Manager_Interface:
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to scale connector: {str(e)}")
+        """
 
+        """
         @self.app.get("/connector/{connector_id}/events")
         async def get_connector_events(connector_id: str):
-            """Get Kubernetes events for a specific connector"""
+            # Get Kubernetes events for a specific connector
             try:
                 if not self.manager_core.connector_manager.check_connector_exists(connector_id):
                     raise HTTPException(status_code=404, detail=f"No connector found with identifier {connector_id}")
@@ -280,6 +448,7 @@ class CCM_Manager_Interface:
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to get connector events: {str(e)}")
+        """
 
         # ===== SYSTEM STATUS ROUTES =====
 
@@ -303,8 +472,8 @@ class CCM_Manager_Interface:
                 }
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to get system status: {str(e)}")
-            
-        @self.app.post("/api/SDT/create/")
+
+        @self.app.post("/api/SDTM/create/", summary="Synchronize BOMS from CCM Manager")
         async def create_sdt(request: Request, 
                               toeid: str = Query(default="123456789", description="Target of Evaluation ID"), 
                               payload_type: str = Query(default="BOMS", description="Type of payload "),
@@ -424,7 +593,7 @@ class CCM_Manager_Interface:
     
     def start_server(self, host="0.0.0.0", port=8008):
         """Start the FastAPI server"""
-        LOGGER.info(f"Starting CCM Manager API server on {host}:{port}")
+        LOGGER.info(f"Starting SDT Manager API server on {host}:{port}")
         uvicorn.run(self.app, host=host, port=port)
     
     def start_server_thread(self, host="0.0.0.0", port=8008):
