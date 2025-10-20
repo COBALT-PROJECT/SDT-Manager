@@ -7,7 +7,7 @@ import re
 from typing import Dict, Optional, List, Tuple
 
 # Base path for IDS connector YAML files
-IDS_YAML_BASE_PATH = "/home/ubuntu/true-connector/kubernetes/"
+IDS_YAML_BASE_PATH = "/home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/" #set absolute path to where the yaml files needed to instantiate ids-connector-sdt pods
 
 # IDS Connector configuration files
 IDS_CONFIG_FILES = {
