@@ -6,7 +6,7 @@ import uuid
 import re
 from typing import Dict, Optional, List
 
-YAML_PATH = "/home/ubuntu/k3s-SDT-Ditto/yaml_scripts/"
+YAML_PATH = "/home/sdtm/SDTM/SDT-Manager/yaml_scripts/"
 LOGGER = logging.getLogger(__name__)
 
 class SDT_LifeCycleManager:
@@ -33,7 +33,7 @@ class SDT_LifeCycleManager:
         """Deploys the SDT pod and assigns a random identifier."""
         pod_id = uuid.uuid4().hex[:8]  # Generate a short hexadecimal identifier
         LOGGER.info(f"Deploying SDT pod with ID: {pod_id}")
-        self.run_command(f"kubectl apply -f {YAML_PATH}sdt-pod-with-ditto-k3s-itr2.yml")
+        self.run_command(f"kubectl apply -f {YAML_PATH}sdt-pod-with-ditto-k3s-itr2.yaml")
         time.sleep(5)  # Give time for pod to be created
         pod_name = self.get_pod_name()
         if pod_name:
