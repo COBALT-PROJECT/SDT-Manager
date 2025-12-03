@@ -5,7 +5,7 @@ import os
 from sdt_lifecycle_manager import SDT_LifeCycleManager
 from sdt_connector_manager import SDT_ConnectorManager
 from sdt_manager_interface import SDT_Manager_Interface
-from adapter import DTModelAdapter
+from adapter_all import DTModelAdapter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 

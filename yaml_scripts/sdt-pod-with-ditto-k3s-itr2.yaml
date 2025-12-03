@@ -29,8 +29,16 @@ spec:
               value: "80"
             - name: MQTT_BROKER_HOST
               value: "sdt-service"
+            - name: MQTT_BROKER_PORT
+              value: "1883"
             - name: CLOUDITOR_HOST
               value: "10.160.101.137"
+            - name: CLOUDITOR_HOST_PORT
+              value: "8080"
+            - name: IDS_CONNECTOR_HOST
+              value: "ids-connector-sdt-service"
+            - name: IDS_CONNECTOR_PORT
+              value: "8004"
           volumeMounts:
             - name: sdt-output
               mountPath: /app/sdt_output
