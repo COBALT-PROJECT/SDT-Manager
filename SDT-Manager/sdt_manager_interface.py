@@ -51,6 +51,7 @@ class SDT_Manager_Interface:
     def __init__(self, manager_core):
         """Initialize with reference to the SDT Manager Core"""
         self.manager_core = manager_core
+        self.sdt_to_ids_map = {}  # Maps SDT identifier to IDS-SDT connector_id
         self.app = FastAPI(
             title="SDT Deployment API",
             description="API for managing SDT deployments and IDS connectors in Kubernetes"
@@ -69,12 +70,25 @@ class SDT_Manager_Interface:
             tags=["SDT deployment APIs"],
         )
         async def deploy_sdt():
-            """Deploy an SDT pod and service"""
+            """Deploy an SDT pod and service, then automatically deploy IDS-SDT connector"""
             try:
                 # Deploy using the manager's lifecycle component
                 pod_name, identifier = self.manager_core.lifecycle_manager.deploy()
 
                 if pod_name and identifier:
+                    LOGGER.info(f"SDT deployed successfully: {pod_name}, {identifier}")
+                    
+                    # Automatically deploy IDS-SDT connector
+                    LOGGER.info("Deploying IDS-SDT connector...")
+                    ids_deployment_name, ids_connector_id = self.manager_core.connector_manager.deploy_connector("ids_sdt")
+                    
+                    if ids_deployment_name and ids_connector_id:
+                        LOGGER.info(f"IDS-SDT connector deployed: {ids_deployment_name}, {ids_connector_id}")
+                        # Store the mapping
+                        self.sdt_to_ids_map[identifier] = ids_connector_id
+                    else:
+                        LOGGER.warning("IDS-SDT connector deployment failed, but SDT is running")
+                    
                     return DeploymentResponse(
                         success=True,
                         message="SDT deployment successful",
@@ -115,6 +129,16 @@ class SDT_Manager_Interface:
                 )
 
                 if deletion_results.get(twinId, False):
+                    LOGGER.info(f"SDT deleted successfully: {twinId}")
+                    
+                    # Delete associated IDS-SDT connector
+                    ids_connector_id = self.sdt_to_ids_map.get(twinId)
+                    if ids_connector_id:
+                        LOGGER.info(f"Deleting IDS-SDT connector: {ids_connector_id}")
+                        self.manager_core.connector_manager.delete_connector(ids_connector_id)
+                        del self.sdt_to_ids_map[twinId]
+                        LOGGER.info(f"IDS-SDT connector deleted: {ids_connector_id}")
+                    
                     return DeploymentResponse(
                         success=True,
                         message=f"Successfully deleted deployment with identifier {twinId}",
