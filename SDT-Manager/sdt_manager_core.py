@@ -4,6 +4,7 @@ import threading
 import os
 from sdt_lifecycle_manager import SDT_LifeCycleManager
 from sdt_connector_manager import SDT_ConnectorManager
+from watchtower_manager import WatchTower_LifeCycleManager
 from sdt_manager_interface import SDT_Manager_Interface
 from adapter_all import DTModelAdapter
 
@@ -23,9 +24,13 @@ class SDT_ManagerCore:
         api_server_host = os.environ.get('API_SERVER_HOST', '0.0.0.0')
         api_server_port = int(os.environ.get('API_SERVER_PORT', '8008'))
         
-        # Initialize components
+        # Initialize SDT Lifecycle Manager
         self.lifecycle_manager = SDT_LifeCycleManager()
         LOGGER.info("SDT Lifecycle Manager has been instantiated")
+        
+        # Initialize Watchtower Lifecycle Manager
+        self.watchtower_manager = WatchTower_LifeCycleManager()
+        LOGGER.info("Watchtower Lifecycle Manager has been instantiated")
         
         # Initialize SDT Connector Manager (independent IDS connector management)
         self.connector_manager = SDT_ConnectorManager()

@@ -12,7 +12,7 @@ import time
 from fastapi import Request, FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-
+logger = logging.getLogger(__name__)
 LOGGER = logging.getLogger(__name__)
 
 # Pydantic models defined outside the class to avoid linting warnings
@@ -22,6 +22,15 @@ class DeploymentResponse(BaseModel):
     message: str
     pod_name: Optional[str] = None
     identifier: Optional[str] = None
+
+class WatchtowerResponse(BaseModel):
+    """Response model for Watchtower operations"""
+    success: bool
+    message: str
+    pod_name: Optional[str] = None
+    watchtower_id: Optional[str] = None
+    node: Optional[str] = None
+    node_port: Optional[str] = None
 
 class ConnectorResponse(BaseModel):
     """Response model for connector operations"""
@@ -46,7 +55,7 @@ class MultipleFilesRequest(BaseModel):
 
 
 class SDT_Manager_Interface:
-    """North Bound Interface for SDT Manager using FastAPI,it faces CCM Manager"""
+    """North Bound Interface for SDT Manager using FastAPI, it faces CCM Manager"""
     
     def __init__(self, manager_core):
         """Initialize with reference to the SDT Manager Core"""
@@ -54,13 +63,267 @@ class SDT_Manager_Interface:
         self.sdt_to_ids_map = {}  # Maps SDT identifier to IDS-SDT connector_id
         self.app = FastAPI(
             title="SDT Deployment API",
-            description="API for managing SDT deployments and IDS connectors in Kubernetes"
+            description="API for managing SDT deployments, Watchtower instances, and IDS connectors in Kubernetes",
+            version="1.1.0"
         )
         self._setup_routes()
-        LOGGER.info("SDT Manager Interface initialized")
+        LOGGER.info("SDT Manager Interface initialized with Watchtower support")
     
     def _setup_routes(self):
         """Setup the API routes"""
+        
+        # ===== WATCHTOWER DEPLOYMENT ROUTES =====
+        
+        @self.app.post(
+            "/api/SDTM/watchtower",
+            response_model=WatchtowerResponse,
+            summary="Deploy a Watchtower instance",
+            tags=["Watchtower APIs"],
+        )
+        async def deploy_watchtower():
+            """
+            Deploy a Watchtower pod and service on the 'watchtower' node.
+            
+            The Watchtower will be deployed on the worker node named 'watchtower'
+            and will be assigned a unique identifier for management.
+            """
+            try:
+                LOGGER.info("Received request to deploy Watchtower")
+                
+                # Deploy using the watchtower manager
+                pod_name, watchtower_id = self.manager_core.watchtower_manager.deploy_watchtower()
+
+                if pod_name and watchtower_id:
+                    LOGGER.info(f"Watchtower deployed successfully: {pod_name}, {watchtower_id}")
+                    
+                    # Get additional info
+                    info = self.manager_core.watchtower_manager.get_watchtower_info(watchtower_id)
+                    
+                    return WatchtowerResponse(
+                        success=True,
+                        message="Watchtower deployment successful",
+                        pod_name=pod_name,
+                        watchtower_id=watchtower_id,
+                        node=info.get("node") if info else None,
+                        node_port=info.get("node_port") if info else None
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=500, 
+                        detail="Watchtower deployment failed - no pod information available"
+                    )
+
+            except Exception as e:
+                LOGGER.error(f"Error deploying Watchtower: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Watchtower deployment failed: {str(e)}")
+
+        @self.app.get(
+            "/api/SDTM/watchtower/{watchtowerId}",
+            summary="Get Watchtower instance information",
+            tags=["Watchtower APIs"],
+        )
+        async def get_watchtower(watchtowerId: str):
+            """
+            Retrieve information about a specific Watchtower instance by its identifier.
+            
+            Args:
+                watchtowerId (str): The hexadecimal identifier of the Watchtower instance
+                
+            Returns:
+                JSONResponse: Watchtower information if found, 404 error otherwise
+            """
+            try:
+                LOGGER.info(f"Retrieving Watchtower info for ID: {watchtowerId}")
+                
+                info = self.manager_core.watchtower_manager.get_watchtower_info(watchtowerId)
+                
+                if not info:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"Watchtower not found with identifier {watchtowerId}"
+                    )
+                
+                return JSONResponse(content=info)
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                LOGGER.error(f"Error retrieving Watchtower info: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Failed to retrieve Watchtower info: {str(e)}")
+
+        @self.app.get(
+            "/api/SDTM/watchtower",
+            summary="List all Watchtower instances",
+            tags=["Watchtower APIs"],
+        )
+        async def list_watchtowers():
+            """
+            List all deployed Watchtower instances.
+            
+            Returns:
+                JSONResponse: List of all Watchtower instances with their information
+            """
+            try:
+                LOGGER.info("Listing all Watchtower instances")
+                
+                watchtowers = self.manager_core.watchtower_manager.list_watchtowers()
+                
+                return JSONResponse(content={
+                    "count": len(watchtowers),
+                    "watchtowers": watchtowers
+                })
+
+            except Exception as e:
+                LOGGER.error(f"Error listing Watchtowers: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Failed to list Watchtowers: {str(e)}")
+
+        @self.app.delete(
+            "/api/SDTM/watchtower/{watchtowerId}",
+            summary="Delete a Watchtower instance",
+            tags=["Watchtower APIs"],
+        )
+        async def delete_watchtower(
+            watchtowerId: str,
+            cleanup_service: bool = Query(default=False, description="Also delete the Watchtower service")
+        ):
+            """
+            Delete a Watchtower instance by its identifier.
+            
+            Args:
+                watchtowerId (str): The Watchtower identifier to delete
+                cleanup_service (bool): If True, also delete the Watchtower service
+                
+            Returns:
+                JSONResponse: Deletion results
+            """
+            try:
+                LOGGER.info(f"Received request to delete Watchtower: {watchtowerId}")
+                
+                # Verify the identifier exists
+                if not self.manager_core.watchtower_manager.check_watchtower_exists(watchtowerId):
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"No Watchtower found with identifier {watchtowerId}"
+                    )
+
+                # Delete using the watchtower manager
+                deletion_results = self.manager_core.watchtower_manager.delete_watchtower_by_id(
+                    watchtowerId, 
+                    cleanup_service=cleanup_service
+                )
+
+                if deletion_results.get(watchtowerId, False):
+                    LOGGER.info(f"Watchtower deleted successfully: {watchtowerId}")
+                    return JSONResponse(content={
+                        "success": True,
+                        "message": f"Successfully deleted Watchtower with identifier {watchtowerId}",
+                        "watchtower_id": watchtowerId,
+                        "deletion_details": deletion_results
+                    })
+                else:
+                    raise HTTPException(
+                        status_code=500, 
+                        detail=f"Failed to delete Watchtower with identifier {watchtowerId}"
+                    )
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                LOGGER.error(f"Error deleting Watchtower: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Deletion failed: {str(e)}")
+        
+        @self.app.get(
+            "/api/SDTM/watchtower/{watchtowerId}/logs",
+            summary="Get Watchtower logs",
+            tags=["Watchtower APIs"],
+        )
+        async def get_watchtower_logs(
+            watchtowerId: str,
+            lines: int = Query(default=100, description="Number of log lines to retrieve")
+        ):
+            """
+            Get logs for a specific Watchtower instance.
+            
+            Args:
+                watchtowerId (str): The Watchtower identifier
+                lines (int): Number of log lines to retrieve (default: 100)
+                
+            Returns:
+                JSONResponse: Watchtower logs
+            """
+            try:
+                LOGGER.info(f"Retrieving logs for Watchtower: {watchtowerId}")
+                
+                if not self.manager_core.watchtower_manager.check_watchtower_exists(watchtowerId):
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No Watchtower found with identifier {watchtowerId}"
+                    )
+                
+                logs = self.manager_core.watchtower_manager.get_watchtower_logs(watchtowerId, lines)
+                
+                if logs is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No logs available for Watchtower {watchtowerId}"
+                    )
+                
+                return JSONResponse(content={
+                    "watchtower_id": watchtowerId,
+                    "lines": lines,
+                    "logs": logs
+                })
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                LOGGER.error(f"Error retrieving logs: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Failed to retrieve logs: {str(e)}")
+        
+        @self.app.post(
+            "/api/SDTM/watchtower/{watchtowerId}/restart",
+            summary="Restart a Watchtower instance",
+            tags=["Watchtower APIs"],
+        )
+        async def restart_watchtower(watchtowerId: str):
+            """
+            Restart a specific Watchtower instance.
+            
+            Args:
+                watchtowerId (str): The Watchtower identifier
+                
+            Returns:
+                JSONResponse: Restart result
+            """
+            try:
+                LOGGER.info(f"Restarting Watchtower: {watchtowerId}")
+                
+                if not self.manager_core.watchtower_manager.check_watchtower_exists(watchtowerId):
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No Watchtower found with identifier {watchtowerId}"
+                    )
+                
+                success = self.manager_core.watchtower_manager.restart_watchtower(watchtowerId)
+                
+                if success:
+                    return JSONResponse(content={
+                        "success": True,
+                        "message": f"Successfully restarted Watchtower {watchtowerId}",
+                        "watchtower_id": watchtowerId
+                    })
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to restart Watchtower {watchtowerId}"
+                    )
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                LOGGER.error(f"Error restarting Watchtower: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Failed to restart: {str(e)}")
+
         # ===== SDT DEPLOYMENT ROUTES =====
 
         @self.app.post(
@@ -237,8 +500,6 @@ class SDT_Manager_Interface:
                 LOGGER.error(f"Error retrieving digital twin {twinId}: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Failed to retrieve digital twin: {str(e)}")
 
-        # Replace the existing list_deployments method in _setup_routes with this updated version
-
         @self.app.get(
             "/api/SDTM/deployments",
             summary="List all current SDT deployments",
@@ -414,152 +675,52 @@ class SDT_Manager_Interface:
 
         # ===== SYSTEM STATUS ROUTES =====
 
-        @self.app.get("/status", tags=["SDT deployment APIs"]) 
+        @self.app.get("/status", tags=["System"]) 
         async def get_system_status():
-            """Get overall system status including both SDT and IDS connector deployments"""
+            """Get overall system status including SDT, Watchtower, and IDS connector deployments"""
             try:
                 sdt_deployments = self.manager_core.lifecycle_manager.list_available_deployments()
+                watchtower_count = self.manager_core.watchtower_manager.get_watchtower_count()
                 ids_connectors = self.manager_core.connector_manager.list_connectors()
 
                 return {
                     "sdt_deployments": {"count": len(sdt_deployments), "deployments": sdt_deployments},
+                    "watchtower_instances": {"count": watchtower_count},
                     "ids_connectors": {"count": len(ids_connectors), "connectors": ids_connectors},
                     "system_health": "healthy",
                 }
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to get system status: {str(e)}")
 
-        # @self.app.post(
-        #     "/api/SDTM/create/",
-        #     summary="Synchronize BOMS from CCM Manager",
-        #     tags=["SDT Adaptor API"],
-        # )
-        # async def create_sdt(
-        #     request: Request,
-        #     toeid: str = Query(default="123456789", description="Target of Evaluation ID"),
-        #     payload_type: str = Query(default="BOMS", description="Type of payload "),
-        #     hash_value: str = Query(default="123456789", description="Hash value"),
-        # ):
-        #     """
-        #     Endpoint to validate and convert a CycloneDX payload sent to SDT interface.
+        @self.app.get("/health", tags=["System"])
+        async def health_check():
+            """Health check endpoint for the API"""
+            return JSONResponse(content={
+                "status": "healthy",
+                "service": "SDT Manager API",
+                "components": {
+                    "sdt_manager": "active",
+                    "watchtower_manager": "active",
+                    "connector_manager": "active",
+                    "adapter": "active"
+                }
+            })
 
-        #     Args:
-        #         request (Request): The request object containing the CycloneDX payload.
-        #         toeid (str): Target of Evaluation ID.
-        #         payload_type (str): Type of payload (BOMS, AI, QDT, etc).
+        @self.app.get("/ready", tags=["System"])
+        async def readiness_check():
+            """Readiness check endpoint for the API"""
+            return JSONResponse(content={
+                "status": "ready",
+                "service": "SDT Manager API"
+            })
 
-        #     Returns:
-        #         JSONResponse: A JSON response containing the conversion status or an error message.
-        #     """
-        #     LOGGER.info(f"Received create request with toeid={toeid}, payload_type={payload_type}")
-        #     try:
-        #         # Get the adapter from the manager core
-        #         sdt_adapter = self.manager_core.sdt_adapter
-
-        #         # Receive the payload
-        #         LOGGER.info("Receiving payload...")
-        #         try:
-        #             payload = await request.json()
-        #             if not payload:
-        #                 raise ValueError("Empty payload received")
-        #         except Exception as e:
-        #             LOGGER.error(f"Failed to parse request body as JSON: {e}")
-        #             return JSONResponse(content={"error": "Invalid JSON payload"}, status_code=400)
-
-        #         # Validate and process the payload
-        #         LOGGER.info(f"Processing payload, validating CycloneDX...")
-        #         conversion_time = 0
-        #         controller_time = 0
-
-        #         # Validate the CycloneDX payload
-        #         if sdt_adapter.validate_cyclonedx_smart(payload, strict=False, thorough=False):
-        #             LOGGER.info("Validation successful, converting to Thing structure...")
-        #             json_payload_str = json.dumps(payload)
-
-        #             # Convert CycloneDX to DT structure
-        #             start_time = time.time()
-        #             converted = sdt_adapter.from_cyclone(json_payload_str, hash_value=hash_value)
-        #             conversion_time = time.time() - start_time
-        #             LOGGER.info(f"Conversion completed in {conversion_time:.2f} seconds")
-
-        #             # Send to controller
-        #             LOGGER.info(f"Sending to controller with toeid={toeid}, payload_type={payload_type}...")
-        #             start_time = time.time()
-        #             response = sdt_adapter.send_to_controller(converted, toeid, payload_type)
-        #             controller_time = time.time() - start_time
-        #             LOGGER.info(f"Controller request completed in {controller_time:.2f} seconds")
-
-        #             # Log the response
-        #             if response is not None and hasattr(response, "text"):
-        #                 LOGGER.info(f"Response from controller: {response.text[:200]}...")
-
-        #                 # Check status code for success
-        #                 if 200 <= response.status_code < 300:
-        #                     return JSONResponse(
-        #                         content={
-        #                             "success": True,
-        #                             "message": "Successfully processed and sent to Ditto",
-        #                             "conversion_time": conversion_time,
-        #                             "controller_time": controller_time,
-        #                             "status_code": response.status_code,
-        #                         }
-        #                     )
-        #                 else:
-        #                     return JSONResponse(
-        #                         content={
-        #                             "success": False,
-        #                             "message": f"Error from controller: {response.text}",
-        #                             "status_code": response.status_code,
-        #                         },
-        #                         status_code=response.status_code,
-        #                     )
-        #             else:
-        #                 LOGGER.error("No response received from controller")
-        #                 return JSONResponse(
-        #                     content={"success": False, "message": "No response received from controller"}, status_code=500
-        #                 )
-        #         else:
-        #             LOGGER.error("Invalid CycloneDX payload")
-        #             return JSONResponse(
-        #                 content={"success": False, "message": "Invalid CycloneDX payload - validation failed"},
-        #                 status_code=400,
-        #             )
-
-        #     except Exception as e:
-        #         LOGGER.error(f"Error processing payload: {e}")
-        #         import traceback
-        #         LOGGER.error(traceback.format_exc())
-        #         return JSONResponse(content={"success": False, "error": str(e)}, status_code=500)
-
-        # @self.app.post("/create", tags=["SDT Adaptor API"]) 
-        # async def cyclone2dt(
-        #     request: Request,
-        #     toeid: str = Query(default="123456789", description="Target of Evaluation ID"),
-        #     payload_type: str = Query(default="BOMS", description="Type of payload (AI or QDT)"),
-        #     hash_value: str = Query(default="123456789", description="Hash value"),
-        # ):
-        #     """
-        #     Legacy endpoint to validate and convert a CycloneDX payload.
-        #     Redirects to the /api/SDT/create/ endpoint for consistency.
-
-        #     Args:
-        #         request (Request): The request object containing the CycloneDX payload.
-        #         toeid (str): Target of Evaluation ID.
-        #         payload_type (str): Type of payload (BOMS, AI, QDT, etc).
-
-        #     Returns:
-        #         JSONResponse: A JSON response containing the conversion status or an error message.
-        #     """
-        #     LOGGER.info("Received request to /create - redirecting to /api/SDT/create/")
-        #     return await create_sdt(request, toeid, payload_type, hash_value)
+        # ===== SDT ADAPTER ROUTES =====
 
         @self.app.post("/api/SDTM/adapt", tags=["SDT Adaptor APIs"])
         async def adapt_payload(
             request: Request,
-            # payload_type: str = Query(default="cyclonedx", description="Payload payload_type: cyclonedx|oscal|arm"),
             toeid: str = Query(default="00000000-0000-0000-0000-000000000000", description="Target of Evaluation ID"),
             payload_type: str = Query(default="BOMS", description="Type of payload"),
-            # thing_id: Optional[str] = Query(default=None, description="Optional custom Thing ID"),
         ):
             """
             Unified endpoint to convert different payload formats (CycloneDX, OSCAL, ARM) to Thing payload_type
@@ -619,9 +780,6 @@ class SDT_Manager_Interface:
 
                 return JSONResponse(content={
                     "message": f"{payload_type} payload processed and sent to SDT",
-                    # "thing_id": converted.get("attributes", {}).get("thingId"),
-                    # "conversion_time": conversion_time,
-                    # "controller_time": controller_time,
                     "payload_type": payload_type,
                 })
 
@@ -658,14 +816,12 @@ class SDT_Manager_Interface:
                     try:
                         response = self.manager_core.sdt_adapter.send_to_controller(thing)
                         results.append({
-                            # "thing_id": thing_id,
                             "status": "success",
                             "source_type": thing.get("attributes", {}).get("sourceType"),
                             "response_status": response.status_code if response else None
                         })
                     except Exception as e:
                         results.append({
-                            # "thing_id": thing_id,
                             "status": "failed",
                             "error": str(e)
                         })
@@ -680,10 +836,6 @@ class SDT_Manager_Interface:
                 return JSONResponse(content={
                     "message": "Multiple files processed and sent to SDT",
                     "total_files": len(things),
-                    # "cross_references": cross_ref_count,
-                    # "processing_time": processing_time,
-                    # "controller_time": controller_time,
-                    # "results": results
                 })
             
             except Exception as e:
@@ -771,9 +923,6 @@ class SDT_Manager_Interface:
             except Exception as e:
                 logger.error(f"Error validating CycloneDX: {e}")
                 return JSONResponse(content={"error": str(e), "valid": False}, status_code=400)
-
-
-
     
     def start_server(self, host="0.0.0.0", port=8008):
         """Start the FastAPI server"""

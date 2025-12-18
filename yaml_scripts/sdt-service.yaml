@@ -12,9 +12,9 @@ spec:
       protocol: TCP
       port: 8000       # Service Port (for sdt interface)
       targetPort: 8000 # Pod's Container Port
-      nodePort: 8000  # Exposed port on node
+      nodePort: 30008  # Exposed port on node
     - name: mqtt
       protocol: TCP
       port: 1883       # Service Port (for MQTT)
       targetPort: 1883 # Pod's Container Port
-      nodePort: 1883  # Exposed port on node
+      nodePort: 30009  # Exposed port on node
