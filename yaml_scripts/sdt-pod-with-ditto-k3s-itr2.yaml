@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
         - name: sdt-container
-          image: arq101/sdt-main-image:v0.2.6
-          imagePullPolicy: Always
+          image: sdt-main-image:v0.2.6
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000 #for sdt interface
             - containerPort: 1883 #for mosquitto mqtt broker
