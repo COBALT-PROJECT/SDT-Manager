@@ -583,3 +583,31 @@ class WatchTower_LifeCycleManager:
             int: Number of deployed Watchtowers
         """
         return len(self.watchtower_map)
+    
+    def get_or_register_existing_watchtower(self) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Check if a Watchtower pod exists in the cluster. If it does and is not
+        in the local watchtower_map, register it with a new identifier.
+        
+        Returns:
+            Tuple[Optional[str], Optional[str]]: (pod_name, watchtower_id) or (None, None) if no watchtower exists
+        """
+        # Check if watchtower pod exists in cluster
+        pod_name = self.get_watchtower_pod_name()
+        
+        if not pod_name:
+            LOGGER.info("No existing Watchtower pod found in cluster")
+            return None, None
+        
+        # Check if this pod is already in our map
+        if pod_name in self.watchtower_map:
+            watchtower_id = self.watchtower_map[pod_name]
+            LOGGER.info(f"Watchtower already registered: {pod_name} -> {watchtower_id}")
+            return pod_name, watchtower_id
+        
+        # Pod exists but not in our map - register it with a new identifier
+        watchtower_id = uuid.uuid4().hex[:8]
+        self.watchtower_map[pod_name] = watchtower_id
+        LOGGER.info(f"Registered existing Watchtower: {pod_name} -> {watchtower_id}")
+        
+        return pod_name, watchtower_id

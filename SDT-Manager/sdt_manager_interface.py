@@ -22,15 +22,7 @@ class DeploymentResponse(BaseModel):
     message: str
     pod_name: Optional[str] = None
     identifier: Optional[str] = None
-
-class WatchtowerResponse(BaseModel):
-    """Response model for Watchtower operations"""
-    success: bool
-    message: str
-    pod_name: Optional[str] = None
     watchtower_id: Optional[str] = None
-    node: Optional[str] = None
-    node_port: Optional[str] = None
 
 class ConnectorResponse(BaseModel):
     """Response model for connector operations"""
@@ -63,267 +55,15 @@ class SDT_Manager_Interface:
         self.sdt_to_ids_map = {}  # Maps SDT identifier to IDS-SDT connector_id
         self.app = FastAPI(
             title="SDT Deployment API",
-            description="API for managing SDT deployments, Watchtower instances, and IDS connectors in Kubernetes",
+            description="API for managing SDT deployments and IDS connectors in Kubernetes",
             version="1.1.0"
         )
         self._setup_routes()
-        LOGGER.info("SDT Manager Interface initialized with Watchtower support")
+        LOGGER.info("SDT Manager Interface initialized")
     
     def _setup_routes(self):
         """Setup the API routes"""
         
-        # ===== WATCHTOWER DEPLOYMENT ROUTES =====
-        
-        @self.app.post(
-            "/api/SDTM/watchtower",
-            response_model=WatchtowerResponse,
-            summary="Deploy a Watchtower instance",
-            tags=["Watchtower APIs"],
-        )
-        async def deploy_watchtower():
-            """
-            Deploy a Watchtower pod and service on the 'watchtower' node.
-            
-            The Watchtower will be deployed on the worker node named 'watchtower'
-            and will be assigned a unique identifier for management.
-            """
-            try:
-                LOGGER.info("Received request to deploy Watchtower")
-                
-                # Deploy using the watchtower manager
-                pod_name, watchtower_id = self.manager_core.watchtower_manager.deploy_watchtower()
-
-                if pod_name and watchtower_id:
-                    LOGGER.info(f"Watchtower deployed successfully: {pod_name}, {watchtower_id}")
-                    
-                    # Get additional info
-                    info = self.manager_core.watchtower_manager.get_watchtower_info(watchtower_id)
-                    
-                    return WatchtowerResponse(
-                        success=True,
-                        message="Watchtower deployment successful",
-                        pod_name=pod_name,
-                        watchtower_id=watchtower_id,
-                        node=info.get("node") if info else None,
-                        node_port=info.get("node_port") if info else None
-                    )
-                else:
-                    raise HTTPException(
-                        status_code=500, 
-                        detail="Watchtower deployment failed - no pod information available"
-                    )
-
-            except Exception as e:
-                LOGGER.error(f"Error deploying Watchtower: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Watchtower deployment failed: {str(e)}")
-
-        @self.app.get(
-            "/api/SDTM/watchtower/{watchtowerId}",
-            summary="Get Watchtower instance information",
-            tags=["Watchtower APIs"],
-        )
-        async def get_watchtower(watchtowerId: str):
-            """
-            Retrieve information about a specific Watchtower instance by its identifier.
-            
-            Args:
-                watchtowerId (str): The hexadecimal identifier of the Watchtower instance
-                
-            Returns:
-                JSONResponse: Watchtower information if found, 404 error otherwise
-            """
-            try:
-                LOGGER.info(f"Retrieving Watchtower info for ID: {watchtowerId}")
-                
-                info = self.manager_core.watchtower_manager.get_watchtower_info(watchtowerId)
-                
-                if not info:
-                    raise HTTPException(
-                        status_code=404, 
-                        detail=f"Watchtower not found with identifier {watchtowerId}"
-                    )
-                
-                return JSONResponse(content=info)
-
-            except HTTPException:
-                raise
-            except Exception as e:
-                LOGGER.error(f"Error retrieving Watchtower info: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Failed to retrieve Watchtower info: {str(e)}")
-
-        @self.app.get(
-            "/api/SDTM/watchtower",
-            summary="List all Watchtower instances",
-            tags=["Watchtower APIs"],
-        )
-        async def list_watchtowers():
-            """
-            List all deployed Watchtower instances.
-            
-            Returns:
-                JSONResponse: List of all Watchtower instances with their information
-            """
-            try:
-                LOGGER.info("Listing all Watchtower instances")
-                
-                watchtowers = self.manager_core.watchtower_manager.list_watchtowers()
-                
-                return JSONResponse(content={
-                    "count": len(watchtowers),
-                    "watchtowers": watchtowers
-                })
-
-            except Exception as e:
-                LOGGER.error(f"Error listing Watchtowers: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Failed to list Watchtowers: {str(e)}")
-
-        @self.app.delete(
-            "/api/SDTM/watchtower/{watchtowerId}",
-            summary="Delete a Watchtower instance",
-            tags=["Watchtower APIs"],
-        )
-        async def delete_watchtower(
-            watchtowerId: str,
-            cleanup_service: bool = Query(default=False, description="Also delete the Watchtower service")
-        ):
-            """
-            Delete a Watchtower instance by its identifier.
-            
-            Args:
-                watchtowerId (str): The Watchtower identifier to delete
-                cleanup_service (bool): If True, also delete the Watchtower service
-                
-            Returns:
-                JSONResponse: Deletion results
-            """
-            try:
-                LOGGER.info(f"Received request to delete Watchtower: {watchtowerId}")
-                
-                # Verify the identifier exists
-                if not self.manager_core.watchtower_manager.check_watchtower_exists(watchtowerId):
-                    raise HTTPException(
-                        status_code=404, 
-                        detail=f"No Watchtower found with identifier {watchtowerId}"
-                    )
-
-                # Delete using the watchtower manager
-                deletion_results = self.manager_core.watchtower_manager.delete_watchtower_by_id(
-                    watchtowerId, 
-                    cleanup_service=cleanup_service
-                )
-
-                if deletion_results.get(watchtowerId, False):
-                    LOGGER.info(f"Watchtower deleted successfully: {watchtowerId}")
-                    return JSONResponse(content={
-                        "success": True,
-                        "message": f"Successfully deleted Watchtower with identifier {watchtowerId}",
-                        "watchtower_id": watchtowerId,
-                        "deletion_details": deletion_results
-                    })
-                else:
-                    raise HTTPException(
-                        status_code=500, 
-                        detail=f"Failed to delete Watchtower with identifier {watchtowerId}"
-                    )
-
-            except HTTPException:
-                raise
-            except Exception as e:
-                LOGGER.error(f"Error deleting Watchtower: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Deletion failed: {str(e)}")
-        
-        @self.app.get(
-            "/api/SDTM/watchtower/{watchtowerId}/logs",
-            summary="Get Watchtower logs",
-            tags=["Watchtower APIs"],
-        )
-        async def get_watchtower_logs(
-            watchtowerId: str,
-            lines: int = Query(default=100, description="Number of log lines to retrieve")
-        ):
-            """
-            Get logs for a specific Watchtower instance.
-            
-            Args:
-                watchtowerId (str): The Watchtower identifier
-                lines (int): Number of log lines to retrieve (default: 100)
-                
-            Returns:
-                JSONResponse: Watchtower logs
-            """
-            try:
-                LOGGER.info(f"Retrieving logs for Watchtower: {watchtowerId}")
-                
-                if not self.manager_core.watchtower_manager.check_watchtower_exists(watchtowerId):
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"No Watchtower found with identifier {watchtowerId}"
-                    )
-                
-                logs = self.manager_core.watchtower_manager.get_watchtower_logs(watchtowerId, lines)
-                
-                if logs is None:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"No logs available for Watchtower {watchtowerId}"
-                    )
-                
-                return JSONResponse(content={
-                    "watchtower_id": watchtowerId,
-                    "lines": lines,
-                    "logs": logs
-                })
-
-            except HTTPException:
-                raise
-            except Exception as e:
-                LOGGER.error(f"Error retrieving logs: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Failed to retrieve logs: {str(e)}")
-        
-        @self.app.post(
-            "/api/SDTM/watchtower/{watchtowerId}/restart",
-            summary="Restart a Watchtower instance",
-            tags=["Watchtower APIs"],
-        )
-        async def restart_watchtower(watchtowerId: str):
-            """
-            Restart a specific Watchtower instance.
-            
-            Args:
-                watchtowerId (str): The Watchtower identifier
-                
-            Returns:
-                JSONResponse: Restart result
-            """
-            try:
-                LOGGER.info(f"Restarting Watchtower: {watchtowerId}")
-                
-                if not self.manager_core.watchtower_manager.check_watchtower_exists(watchtowerId):
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"No Watchtower found with identifier {watchtowerId}"
-                    )
-                
-                success = self.manager_core.watchtower_manager.restart_watchtower(watchtowerId)
-                
-                if success:
-                    return JSONResponse(content={
-                        "success": True,
-                        "message": f"Successfully restarted Watchtower {watchtowerId}",
-                        "watchtower_id": watchtowerId
-                    })
-                else:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Failed to restart Watchtower {watchtowerId}"
-                    )
-
-            except HTTPException:
-                raise
-            except Exception as e:
-                LOGGER.error(f"Error restarting Watchtower: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Failed to restart: {str(e)}")
-
         # ===== SDT DEPLOYMENT ROUTES =====
 
         @self.app.post(
@@ -333,7 +73,7 @@ class SDT_Manager_Interface:
             tags=["SDT deployment APIs"],
         )
         async def deploy_sdt():
-            """Deploy an SDT pod and service, then automatically deploy IDS-SDT connector"""
+            """Deploy an SDT pod and service, then automatically deploy IDS-SDT connector and Watchtower"""
             try:
                 # Deploy using the manager's lifecycle component
                 pod_name, identifier = self.manager_core.lifecycle_manager.deploy()
@@ -352,11 +92,26 @@ class SDT_Manager_Interface:
                     else:
                         LOGGER.warning("IDS-SDT connector deployment failed, but SDT is running")
                     
+                    # Check if Watchtower already exists, deploy only if it doesn't
+                    wt_pod_name, watchtower_id = self.manager_core.watchtower_manager.get_or_register_existing_watchtower()
+                    
+                    if wt_pod_name and watchtower_id:
+                        LOGGER.info(f"Watchtower already exists: {wt_pod_name} (ID: {watchtower_id}), skipping deployment")
+                    else:
+                        LOGGER.info("No existing Watchtower found, deploying...")
+                        wt_pod_name, watchtower_id = self.manager_core.watchtower_manager.deploy_watchtower()
+                        
+                        if wt_pod_name and watchtower_id:
+                            LOGGER.info(f"Watchtower deployed: {wt_pod_name}, {watchtower_id}")
+                        else:
+                            LOGGER.warning("Watchtower deployment failed, but SDT is running")
+                    
                     return DeploymentResponse(
                         success=True,
                         message="SDT deployment successful",
                         pod_name=pod_name,
                         identifier=identifier,
+                        watchtower_id=watchtower_id,
                     )
                 else:
                     raise HTTPException(
@@ -401,6 +156,13 @@ class SDT_Manager_Interface:
                         self.manager_core.connector_manager.delete_connector(ids_connector_id)
                         del self.sdt_to_ids_map[twinId]
                         LOGGER.info(f"IDS-SDT connector deleted: {ids_connector_id}")
+                    
+                    # Delete Watchtower if it exists
+                    wt_pod_name, watchtower_id = self.manager_core.watchtower_manager.get_or_register_existing_watchtower()
+                    if watchtower_id:
+                        LOGGER.info(f"Deleting Watchtower: {watchtower_id}")
+                        self.manager_core.watchtower_manager.delete_watchtower_by_id(watchtower_id, cleanup_service=True)
+                        LOGGER.info(f"Watchtower deleted: {watchtower_id}")
                     
                     return DeploymentResponse(
                         success=True,
