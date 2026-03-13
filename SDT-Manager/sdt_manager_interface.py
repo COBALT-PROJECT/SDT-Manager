@@ -8,6 +8,8 @@ import uvicorn
 import logging
 import json
 import time
+import threading
+import os
 
 from fastapi import Request, FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -23,6 +25,8 @@ class DeploymentResponse(BaseModel):
     pod_name: Optional[str] = None
     identifier: Optional[str] = None
     watchtower_id: Optional[str] = None
+    ids_connector_id: Optional[str] = None
+    auth_status: Optional[str] = None
 
 class ConnectorResponse(BaseModel):
     """Response model for connector operations"""
@@ -40,7 +44,6 @@ class DeletionRequest(BaseModel):
 class FileConfig(BaseModel):
     path: str
     type: str
-    # thing_id: Optional[str] = None
 
 class MultipleFilesRequest(BaseModel):
     file_configs: List[FileConfig]
@@ -56,11 +59,193 @@ class SDT_Manager_Interface:
         self.app = FastAPI(
             title="SDT Deployment API",
             description="API for managing SDT deployments and IDS connectors in Kubernetes",
-            version="1.1.0"
+            version="2.0.0"
         )
         self._setup_routes()
         LOGGER.info("SDT Manager Interface initialized")
     
+    def _run_auth_flow_async(self, sdt_identifier: str, ids_connector_id: Optional[str],
+                              watchtower_id: Optional[str]):
+        """
+        Run the wallet registration and token acquisition in a background
+        thread so the deploy endpoint can return quickly.
+
+        Once the token is obtained it is distributed to the SDT, IDS-SDT
+        connector and Watchtower via HTTP POST to their /auth/token endpoint.
+
+        Args:
+            sdt_identifier:   Hex identifier of the deployed SDT.
+            ids_connector_id: Hex identifier of the IDS-SDT connector (may be None).
+            watchtower_id:    Hex identifier of the Watchtower (may be None).
+        """
+        LOGGER.info(f"Background auth flow started for SDT {sdt_identifier}")
+
+        try:
+            success, access_token = (
+                self.manager_core.auth_manager.register_and_get_token(
+                    sdt_id=sdt_identifier
+                )
+            )
+
+            if not success or not access_token:
+                LOGGER.error(
+                    f"Auth flow failed for SDT {sdt_identifier} — "
+                    "components will run without token"
+                )
+                return
+
+            # Distribute the token to all related components
+            self._distribute_token(sdt_identifier, access_token,
+                                   ids_connector_id, watchtower_id)
+
+        except Exception as e:
+            LOGGER.error(f"Auth flow exception for SDT {sdt_identifier}: {e}")
+
+    def _distribute_token(self, sdt_identifier: str, access_token: str,
+                          ids_connector_id: Optional[str],
+                          watchtower_id: Optional[str]):
+        """
+        Send the full credentials JSON payload to the running SDT, IDS-SDT
+        and Watchtower components via HTTP POST to their /auth/token endpoint.
+
+        Each component exposes the same endpoint: POST /auth/token
+        The SDT Manager resolves the target address using the Kubernetes
+        service ClusterIP + the configured port for each component type.
+
+        Args:
+            sdt_identifier:   Hex identifier of the SDT.
+            access_token:     The OAuth2 access token to distribute.
+            ids_connector_id: Connector identifier (may be None).
+            watchtower_id:    Watchtower identifier (may be None).
+        """
+        LOGGER.info(f"Distributing credentials to components for SDT {sdt_identifier}")
+
+        # Build the full credentials payload
+        creds = self.manager_core.credential_store.get_credentials(sdt_identifier)
+        auth_payload = {
+            "sdt_id": sdt_identifier,
+            "client_id": creds.get("client_id") if creds else None,
+            "client_secret": creds.get("client_secret") if creds else None,
+            "access_token": access_token,
+        }
+
+        # --- SDT service ---
+        sdt_service_name = self._get_sdt_service_name()
+        sdt_port = int(os.environ.get("SDT_AUTH_PORT", "8080"))
+        if sdt_service_name:
+            self._send_token_to_service(sdt_service_name, sdt_port, auth_payload, "SDT")
+        else:
+            LOGGER.warning("Could not resolve SDT service — skipping token delivery to SDT")
+
+        # --- IDS-SDT connector service ---
+        if ids_connector_id:
+            ids_service_name = self._get_ids_sdt_service_name()
+            ids_port = int(os.environ.get("IDS_SDT_AUTH_PORT", "8080"))
+            if ids_service_name:
+                self._send_token_to_service(ids_service_name, ids_port, auth_payload, "IDS-SDT")
+            else:
+                LOGGER.warning("Could not resolve IDS-SDT service — skipping token delivery")
+
+        # --- Watchtower service ---
+        if watchtower_id:
+            wt_service_name = "watchtower-service"
+            wt_port = int(os.environ.get("WATCHTOWER_AUTH_PORT", "8080"))
+            self._send_token_to_service(wt_service_name, wt_port, auth_payload, "Watchtower")
+
+        LOGGER.info(f"Token distribution completed for SDT {sdt_identifier}")
+
+    def _send_token_to_service(self, service_name: str, port: int,
+                                auth_payload: dict, component_label: str):
+        """
+        POST the credentials JSON payload to a component's /auth/token
+        endpoint using its Kubernetes service ClusterIP.
+
+        Args:
+            service_name:    Kubernetes service name.
+            port:            Port the component listens on.
+            auth_payload:    The full credentials dict to send.
+            component_label: Human-readable label for logging.
+        """
+        import requests as req
+
+        # Resolve ClusterIP from the service
+        cluster_ip = self._get_service_cluster_ip(service_name)
+        if not cluster_ip:
+            LOGGER.error(f"Cannot resolve ClusterIP for {service_name} — token not delivered to {component_label}")
+            return
+
+        url = f"http://{cluster_ip}:{port}/auth/token"
+        LOGGER.info(f"Sending credentials to {component_label} at {url}")
+
+        try:
+            response = req.post(
+                url,
+                json=auth_payload,
+                headers={"Content-Type": "application/json"},
+                timeout=15,
+            )
+            if response.status_code in (200, 201, 204):
+                LOGGER.info(f"Credentials delivered to {component_label} ({service_name}) — HTTP {response.status_code}")
+            else:
+                LOGGER.error(
+                    f"Token delivery to {component_label} ({service_name}) failed — "
+                    f"HTTP {response.status_code}: {response.text[:200]}"
+                )
+        except req.exceptions.ConnectionError as e:
+            LOGGER.error(f"Connection to {component_label} ({url}) failed: {e}")
+        except req.exceptions.Timeout:
+            LOGGER.error(f"Timeout sending credentials to {component_label} ({url})")
+        except req.exceptions.RequestException as e:
+            LOGGER.error(f"Error sending credentials to {component_label} ({url}): {e}")
+
+    def _get_service_cluster_ip(self, service_name: str) -> Optional[str]:
+        """
+        Resolve the ClusterIP of a Kubernetes service.
+
+        Args:
+            service_name: Name of the Kubernetes service.
+
+        Returns:
+            The ClusterIP string, or None if not found.
+        """
+        cmd = f"kubectl get service {service_name} -o jsonpath='{{.spec.clusterIP}}' --ignore-not-found=true"
+        cluster_ip = self.manager_core.lifecycle_manager.run_command(cmd)
+        if cluster_ip and cluster_ip != "None":
+            LOGGER.info(f"Resolved {service_name} ClusterIP: {cluster_ip}")
+            return cluster_ip
+        LOGGER.warning(f"Could not resolve ClusterIP for service {service_name}")
+        return None
+
+    def _get_sdt_service_name(self) -> Optional[str]:
+        """
+        Resolve the SDT Kubernetes service name.
+        Looks up the known service name 'sdt-service' directly since the
+        service metadata does not carry the app=sdt label (only the
+        selector does).
+
+        Returns:
+            The service name string, or None.
+        """
+        cmd = "kubectl get service sdt-service -o jsonpath='{.metadata.name}' --ignore-not-found=true"
+        return self.manager_core.lifecycle_manager.run_command(cmd)
+
+    def _get_ids_sdt_service_name(self) -> Optional[str]:
+        """
+        Resolve the IDS-SDT connector Kubernetes service name.
+        Tries the dedicated ids-connector-sdt-service first, falls back to tc-consumer.
+
+        Returns:
+            The service name string, or None.
+        """
+        # Try ids-connector-sdt-service first
+        cmd = "kubectl get service ids-connector-sdt-service -o jsonpath='{.metadata.name}' --ignore-not-found=true"
+        result = self.manager_core.lifecycle_manager.run_command(cmd)
+        if result:
+            return result
+        # Fall back to tc-consumer service
+        cmd = "kubectl get services -l io.kompose.service=tc-consumer -o jsonpath='{.items[0].metadata.name}' --ignore-not-found=true"
+        return self.manager_core.lifecycle_manager.run_command(cmd)
+
     def _setup_routes(self):
         """Setup the API routes"""
         
@@ -73,51 +258,82 @@ class SDT_Manager_Interface:
             tags=["SDT deployment APIs"],
         )
         async def deploy_sdt():
-            """Deploy an SDT pod and service, then automatically deploy IDS-SDT connector and Watchtower"""
+            """
+            Deploy an SDT pod and service, then automatically:
+              1. Deploy IDS-SDT connector and Watchtower
+              2. Register the SDT with the wallet controller (using its hex ID)
+              3. Obtain an OAuth2 access token
+              4. Store credentials in SQLite
+              5. Distribute the token to SDT, IDS-SDT and Watchtower
+            """
             try:
-                # Deploy using the manager's lifecycle component
+                # --- 1. Deploy SDT pod + service ---
                 pod_name, identifier = self.manager_core.lifecycle_manager.deploy()
 
-                if pod_name and identifier:
-                    LOGGER.info(f"SDT deployed successfully: {pod_name}, {identifier}")
-                    
-                    # Automatically deploy IDS-SDT connector
-                    LOGGER.info("Deploying IDS-SDT connector...")
-                    ids_deployment_name, ids_connector_id = self.manager_core.connector_manager.deploy_connector("ids_sdt")
-                    
-                    if ids_deployment_name and ids_connector_id:
-                        LOGGER.info(f"IDS-SDT connector deployed: {ids_deployment_name}, {ids_connector_id}")
-                        # Store the mapping
-                        self.sdt_to_ids_map[identifier] = ids_connector_id
-                    else:
-                        LOGGER.warning("IDS-SDT connector deployment failed, but SDT is running")
-                    
-                    # Check if Watchtower already exists, deploy only if it doesn't
-                    wt_pod_name, watchtower_id = self.manager_core.watchtower_manager.get_or_register_existing_watchtower()
-                    
-                    if wt_pod_name and watchtower_id:
-                        LOGGER.info(f"Watchtower already exists: {wt_pod_name} (ID: {watchtower_id}), skipping deployment")
-                    else:
-                        LOGGER.info("No existing Watchtower found, deploying...")
-                        wt_pod_name, watchtower_id = self.manager_core.watchtower_manager.deploy_watchtower()
-                        
-                        if wt_pod_name and watchtower_id:
-                            LOGGER.info(f"Watchtower deployed: {wt_pod_name}, {watchtower_id}")
-                        else:
-                            LOGGER.warning("Watchtower deployment failed, but SDT is running")
-                    
-                    return DeploymentResponse(
-                        success=True,
-                        message="SDT deployment successful",
-                        pod_name=pod_name,
-                        identifier=identifier,
-                        watchtower_id=watchtower_id,
-                    )
-                else:
+                if not pod_name or not identifier:
                     raise HTTPException(
-                        status_code=500, detail="Deployment failed - no pod information available"
+                        status_code=500,
+                        detail="SDT deployment failed — no pod information available"
                     )
 
+                LOGGER.info(f"SDT deployed successfully: {pod_name}, ID={identifier}")
+                
+                # --- 2. Deploy IDS-SDT connector ---
+                ids_connector_id = None
+                LOGGER.info("Deploying IDS-SDT connector...")
+                ids_deployment_name, ids_connector_id = (
+                    self.manager_core.connector_manager.deploy_connector("ids_sdt")
+                )
+                
+                if ids_deployment_name and ids_connector_id:
+                    LOGGER.info(f"IDS-SDT connector deployed: {ids_deployment_name}, ID={ids_connector_id}")
+                    self.sdt_to_ids_map[identifier] = ids_connector_id
+                else:
+                    LOGGER.warning("IDS-SDT connector deployment failed, SDT will run without connector")
+                
+                # --- 3. Deploy / discover Watchtower ---
+                watchtower_id = None
+                wt_pod_name, watchtower_id = (
+                    self.manager_core.watchtower_manager.get_or_register_existing_watchtower()
+                )
+                
+                if wt_pod_name and watchtower_id:
+                    LOGGER.info(f"Watchtower exists: {wt_pod_name} (ID: {watchtower_id}), skipping deployment")
+                else:
+                    LOGGER.info("No existing Watchtower found, deploying...")
+                    wt_pod_name, watchtower_id = (
+                        self.manager_core.watchtower_manager.deploy_watchtower()
+                    )
+                    if wt_pod_name and watchtower_id:
+                        LOGGER.info(f"Watchtower deployed: {wt_pod_name}, ID={watchtower_id}")
+                    else:
+                        LOGGER.warning("Watchtower deployment failed, SDT will run without monitoring")
+                
+                # --- 4. Start auth flow in background thread ---
+                # Uses the hex identifier as twin_id for wallet registration.
+                # The thread registers, polls, fetches token, stores in SQLite,
+                # and distributes the token to all three components.
+                auth_thread = threading.Thread(
+                    target=self._run_auth_flow_async,
+                    args=(identifier, ids_connector_id, watchtower_id),
+                    daemon=True,
+                    name=f"auth-{identifier}",
+                )
+                auth_thread.start()
+                LOGGER.info(f"Auth flow started in background for SDT {identifier}")
+                
+                return DeploymentResponse(
+                    success=True,
+                    message="SDT deployment successful — authentication in progress",
+                    pod_name=pod_name,
+                    identifier=identifier,
+                    watchtower_id=watchtower_id,
+                    ids_connector_id=ids_connector_id,
+                    auth_status="in_progress",
+                )
+
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Deployment failed: {str(e)}")
 
@@ -128,7 +344,13 @@ class SDT_Manager_Interface:
             tags=["SDT deployment APIs"],
         )
         async def delete_sdt(twinId: str):
-            """Delete an SDT deployment by identifier"""
+            """
+            Delete an SDT deployment by identifier.  Also:
+              1. Delete associated IDS-SDT connector
+              2. Delete Watchtower
+              3. Delete twin registration from wallet controller
+              4. Remove credentials from SQLite
+            """
             try:
                 # Verify the identifier exists in the pod map
                 identifier_exists = any(
@@ -141,38 +363,49 @@ class SDT_Manager_Interface:
                         status_code=404, detail=f"No deployment found with identifier {twinId}"
                     )
 
-                # Delete using the manager
+                # --- 1. Delete the SDT deployment ---
                 deletion_results = self.manager_core.lifecycle_manager.delete_deployment_by_id(
                     twinId
                 )
 
-                if deletion_results.get(twinId, False):
-                    LOGGER.info(f"SDT deleted successfully: {twinId}")
-                    
-                    # Delete associated IDS-SDT connector
-                    ids_connector_id = self.sdt_to_ids_map.get(twinId)
-                    if ids_connector_id:
-                        LOGGER.info(f"Deleting IDS-SDT connector: {ids_connector_id}")
-                        self.manager_core.connector_manager.delete_connector(ids_connector_id)
-                        del self.sdt_to_ids_map[twinId]
-                        LOGGER.info(f"IDS-SDT connector deleted: {ids_connector_id}")
-                    
-                    # Delete Watchtower if it exists
-                    wt_pod_name, watchtower_id = self.manager_core.watchtower_manager.get_or_register_existing_watchtower()
-                    if watchtower_id:
-                        LOGGER.info(f"Deleting Watchtower: {watchtower_id}")
-                        self.manager_core.watchtower_manager.delete_watchtower_by_id(watchtower_id, cleanup_service=True)
-                        LOGGER.info(f"Watchtower deleted: {watchtower_id}")
-                    
-                    return DeploymentResponse(
-                        success=True,
-                        message=f"Successfully deleted deployment with identifier {twinId}",
-                        identifier=twinId,
-                    )
-                else:
+                if not deletion_results.get(twinId, False):
                     raise HTTPException(
-                        status_code=500, detail=f"Failed to delete deployment with identifier {twinId}"
+                        status_code=500,
+                        detail=f"Failed to delete SDT deployment with identifier {twinId}"
                     )
+
+                LOGGER.info(f"SDT deleted successfully: {twinId}")
+                
+                # --- 2. Delete associated IDS-SDT connector ---
+                ids_connector_id = self.sdt_to_ids_map.get(twinId)
+                if ids_connector_id:
+                    LOGGER.info(f"Deleting IDS-SDT connector: {ids_connector_id}")
+                    self.manager_core.connector_manager.delete_connector(ids_connector_id)
+                    del self.sdt_to_ids_map[twinId]
+                    LOGGER.info(f"IDS-SDT connector deleted: {ids_connector_id}")
+                
+                # --- 3. Delete Watchtower if it exists ---
+                wt_pod_name, watchtower_id = (
+                    self.manager_core.watchtower_manager.get_or_register_existing_watchtower()
+                )
+                if watchtower_id:
+                    LOGGER.info(f"Deleting Watchtower: {watchtower_id}")
+                    self.manager_core.watchtower_manager.delete_watchtower_by_id(
+                        watchtower_id, cleanup_service=True
+                    )
+                    LOGGER.info(f"Watchtower deleted: {watchtower_id}")
+                
+                # --- 4. Delete auth data (wallet + SQLite) ---
+                LOGGER.info(f"Deleting authentication data for SDT {twinId}")
+                self.manager_core.auth_manager.delete_twin_auth(twinId)
+                LOGGER.info(f"Authentication data deleted for SDT {twinId}")
+                
+                return DeploymentResponse(
+                    success=True,
+                    message=f"Successfully deleted SDT {twinId} and all associated resources",
+                    identifier=twinId,
+                    auth_status="deleted",
+                )
 
             except HTTPException:
                 raise
@@ -182,18 +415,13 @@ class SDT_Manager_Interface:
         @self.app.get(
             "/api/SDTM/digital-twin/{twinId}",
             summary="Retrieve a digital twin",
-            response_model=None,  # Using None to allow custom response structure
+            response_model=None,
             tags=["SDT deployment APIs"],
         )
         async def get_digital_twin(twinId: str):
             """
             Retrieve a digital twin by its hexadecimal identifier.
-
-            Args:
-                twinId (str): The hexadecimal identifier of the digital twin
-
-            Returns:
-                JSONResponse: Digital twin data if found, 404 error otherwise
+            Includes authentication status from credential store.
             """
             try:
                 # Search for the pod with the given identifier in the pod_map
@@ -239,10 +467,23 @@ class SDT_Manager_Interface:
                 container_status_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.containerStatuses[0].ready}}'"
                 container_ready = self.manager_core.lifecycle_manager.run_command(container_status_cmd) or "false"
 
-                # Construct the response according to the schema
+                # Get authentication status from credential store
+                creds = self.manager_core.credential_store.get_credentials(twinId)
+                auth_info = {}
+                if creds:
+                    auth_info = {
+                        "status": creds.get("status", "unknown"),
+                        "hasToken": creds.get("access_token") is not None,
+                        "registeredAt": creds.get("created_at"),
+                        "lastUpdated": creds.get("updated_at"),
+                    }
+                else:
+                    auth_info = {"status": "not_registered", "hasToken": False}
+
+                # Construct the response
                 response = {
                     "twinId": twinId,
-                    "modelType": "SDT",  # Static as this is SDT Manager
+                    "modelType": "SDT",
                     "currentState": {
                         "podName": pod_name,
                         "deploymentName": deployment_name,
@@ -251,6 +492,7 @@ class SDT_Manager_Interface:
                         "nodeName": node_name,
                         "containerReady": container_ready.lower() == "true",
                     },
+                    "authentication": auth_info,
                     "metadata": {"createdAt": creation_time, "lastUpdated": last_update},
                 }
 
@@ -270,46 +512,43 @@ class SDT_Manager_Interface:
         async def list_deployments():
             """
             List all current SDT deployments with detailed information.
-            Returns the same structure as the individual digital twin endpoint.
             """
             try:
                 deployments = []
 
-                # Iterate through all pods in the pod_map
                 for pod_name, twin_id in self.manager_core.lifecycle_manager.pod_map.items():
                     try:
-                        # Get deployment name from pod name
                         deployment_name = self.manager_core.lifecycle_manager.get_deployment_name_from_pod_name(
                             pod_name
                         )
 
-                        # Get current pod status using kubectl
                         pod_status_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.phase}}'"
                         pod_status = self.manager_core.lifecycle_manager.run_command(pod_status_cmd) or "Unknown"
 
-                        # Get pod creation timestamp
                         creation_time_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.metadata.creationTimestamp}}'"
                         creation_time = self.manager_core.lifecycle_manager.run_command(creation_time_cmd) or ""
 
-                        # Get last transition time (last update)
                         last_update_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.conditions[-1].lastTransitionTime}}'"
                         last_update = self.manager_core.lifecycle_manager.run_command(last_update_cmd) or creation_time
 
-                        # Get additional pod details for current state
                         pod_ip_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.podIP}}'"
                         pod_ip = self.manager_core.lifecycle_manager.run_command(pod_ip_cmd) or "N/A"
 
                         node_name_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.spec.nodeName}}'"
                         node_name = self.manager_core.lifecycle_manager.run_command(node_name_cmd) or "N/A"
 
-                        # Get container statuses
                         container_status_cmd = f"kubectl get pods {pod_name} -o jsonpath='{{.status.containerStatuses[0].ready}}'"
                         container_ready = self.manager_core.lifecycle_manager.run_command(container_status_cmd) or "false"
 
-                        # Construct the deployment info in the same payload_type as get_digital_twin
+                        # Get auth status
+                        creds = self.manager_core.credential_store.get_credentials(twin_id)
+                        auth_status = "not_registered"
+                        if creds:
+                            auth_status = creds.get("status", "unknown")
+
                         deployment_info = {
                             "twinId": twin_id,
-                            "modelType": "SDT",  # Static as this is SDT Manager
+                            "modelType": "SDT",
                             "currentState": {
                                 "podName": pod_name,
                                 "deploymentName": deployment_name,
@@ -318,6 +557,7 @@ class SDT_Manager_Interface:
                                 "nodeName": node_name,
                                 "containerReady": container_ready.lower() == "true",
                             },
+                            "authStatus": auth_status,
                             "metadata": {"createdAt": creation_time, "lastUpdated": last_update},
                         }
 
@@ -325,7 +565,6 @@ class SDT_Manager_Interface:
 
                     except Exception as e:
                         LOGGER.error(f"Error getting details for pod {pod_name}: {str(e)}")
-                        # Add basic info even if detailed fetch fails
                         deployments.append(
                             {
                                 "twinId": twin_id,
@@ -338,6 +577,7 @@ class SDT_Manager_Interface:
                                     "nodeName": "N/A",
                                     "containerReady": False,
                                 },
+                                "authStatus": "unknown",
                                 "metadata": {"createdAt": "", "lastUpdated": ""},
                             }
                         )
@@ -358,7 +598,6 @@ class SDT_Manager_Interface:
         async def deploy_connector(connector_type: str = Query(default="ids_sdt", description="Type of connector to deploy")):
             """Deploy an IDS connector"""
             try:
-                # Deploy using the connector manager
                 deployment_name, connector_id = self.manager_core.connector_manager.deploy_connector(connector_type)
 
                 if deployment_name and connector_id:
@@ -369,7 +608,7 @@ class SDT_Manager_Interface:
                         connector_id=connector_id,
                     )
                 else:
-                    raise HTTPException(status_code=500, detail="Connector deployment failed - no deployment information available")
+                    raise HTTPException(status_code=500, detail="Connector deployment failed — no deployment information available")
 
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Connector deployment failed: {str(e)}")
@@ -385,13 +624,11 @@ class SDT_Manager_Interface:
         ):
             """Delete an IDS connector by identifier"""
             try:
-                # Verify the connector exists
                 connector_exists = self.manager_core.connector_manager.check_connector_exists(deletion_request.identifier)
 
                 if not connector_exists:
                     raise HTTPException(status_code=404, detail=f"No connector found with identifier {deletion_request.identifier}")
 
-                # Delete using the connector manager
                 deletion_results = self.manager_core.connector_manager.delete_connector(
                     deletion_request.identifier, cleanup_resources
                 )
@@ -435,20 +672,69 @@ class SDT_Manager_Interface:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to get connector status: {str(e)}")
 
+        # ===== AUTHENTICATION ROUTES =====
+
+        @self.app.get(
+            "/api/SDTM/auth/{twinId}",
+            summary="Get authentication status for an SDT",
+            tags=["Authentication APIs"],
+        )
+        async def get_auth_status(twinId: str):
+            """Retrieve the authentication / credential status for an SDT."""
+            try:
+                creds = self.manager_core.credential_store.get_credentials(twinId)
+                if not creds:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No authentication data found for SDT {twinId}"
+                    )
+
+                return JSONResponse(content={
+                    "sdt_id": twinId,
+                    "status": creds.get("status"),
+                    "has_token": creds.get("access_token") is not None,
+                    "scope": creds.get("token_scope"),
+                    "registered_at": creds.get("created_at"),
+                    "updated_at": creds.get("updated_at"),
+                })
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to get auth status: {str(e)}")
+
+        @self.app.get(
+            "/api/SDTM/auth",
+            summary="List all SDT credentials (tokens redacted)",
+            tags=["Authentication APIs"],
+        )
+        async def list_credentials():
+            """List all SDT credential records (access tokens are redacted)."""
+            try:
+                records = self.manager_core.credential_store.list_all()
+                return {"credentials": records}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to list credentials: {str(e)}")
+
         # ===== SYSTEM STATUS ROUTES =====
 
         @self.app.get("/status", tags=["System"]) 
         async def get_system_status():
-            """Get overall system status including SDT, Watchtower, and IDS connector deployments"""
+            """Get overall system status including SDT, Watchtower, IDS connector deployments, and auth"""
             try:
                 sdt_deployments = self.manager_core.lifecycle_manager.list_available_deployments()
                 watchtower_count = self.manager_core.watchtower_manager.get_watchtower_count()
                 ids_connectors = self.manager_core.connector_manager.list_connectors()
+                auth_records = self.manager_core.credential_store.list_all()
 
                 return {
                     "sdt_deployments": {"count": len(sdt_deployments), "deployments": sdt_deployments},
                     "watchtower_instances": {"count": watchtower_count},
                     "ids_connectors": {"count": len(ids_connectors), "connectors": ids_connectors},
+                    "authentication": {
+                        "total_registered": len(auth_records),
+                        "issued": sum(1 for r in auth_records if r.get("status") == "issued"),
+                        "pending": sum(1 for r in auth_records if r.get("status") in ("pending", "registered")),
+                    },
                     "system_health": "healthy",
                 }
             except Exception as e:
@@ -464,7 +750,9 @@ class SDT_Manager_Interface:
                     "sdt_manager": "active",
                     "watchtower_manager": "active",
                     "connector_manager": "active",
-                    "adapter": "active"
+                    "adapter": "active",
+                    "auth_manager": "active",
+                    "credential_store": "active",
                 }
             })
 
@@ -486,9 +774,6 @@ class SDT_Manager_Interface:
         ):
             """
             Unified endpoint to convert different payload formats (CycloneDX, OSCAL, ARM) to Thing payload_type
-
-            - `payload_type` selects the input payload_type
-            - body should contain the parsed JSON payload for the selected payload_type
             """
             try:
                 logger.info(f"Receiving payload (payload_type={payload_type})...")
@@ -534,7 +819,6 @@ class SDT_Manager_Interface:
                 controller_time = time.time() - start_time
                 logger.info(f"Request completed in {controller_time:.2f} seconds")
 
-                # Log response details
                 if response is not None and hasattr(response, "text"):
                     logger.info(f"Response from controller: {response.text[:200]}...")
                 else:
@@ -556,12 +840,6 @@ class SDT_Manager_Interface:
         async def adapt_multiple_files(request: MultipleFilesRequest):
             """
             Endpoint to adapt multiple files of different types and create cross-referenced Security Artifacts.
-
-            Args:
-                request: MultipleFilesRequest containing list of file configurations
-            
-            Returns:
-                JSONResponse: Summary of processed Security Artifacts and their relationships
             """
             try:
                 logger.info(f"Processing {len(request.file_configs)} files...")
@@ -570,11 +848,10 @@ class SDT_Manager_Interface:
                 things = self.manager_core.sdt_adapter.process_multiple_files([config.dict() for config in request.file_configs])
                 processing_time = time.time() - start_time
                 
-                # Send each Thing to controller
                 results = []
                 controller_start = time.time()
                 
-                for thing in things.items():
+                for thing_id, thing in things.items():
                     try:
                         response = self.manager_core.sdt_adapter.send_to_controller(thing)
                         results.append({
@@ -590,11 +867,6 @@ class SDT_Manager_Interface:
                 
                 controller_time = time.time() - controller_start
                 
-                # Count cross-references
-                cross_ref_count = sum(
-                    len(thing.get("_cross_references", [])) for thing in things.values()
-                )
-                
                 return JSONResponse(content={
                     "message": "Multiple files processed and sent to SDT",
                     "total_files": len(things),
@@ -608,25 +880,15 @@ class SDT_Manager_Interface:
 
         @self.app.get("/api/SDTM/adapt/cyclonedx/detect/", tags=["SDT Adaptor APIs"])
         async def detect_bom_type(request: Request):
-            """
-            Endpoint to detect the BOM type of a CycloneDX payload.
-            
-            Args:
-                request: Request containing CycloneDX payload
-            
-            Returns:
-                JSONResponse: Detected BOM type information
-            """
+            """Endpoint to detect the BOM type of a CycloneDX payload."""
             try:
                 payload = await request.json()
                 
-                # Basic validation
                 if not isinstance(payload, dict):
                     raise ValueError("Invalid payload payload_type")
                 
                 bom_type = self.manager_core.sdt_adapter.detect_bom_type(payload)
                 
-                # Additional analysis
                 analysis = {
                     "bom_type": bom_type,
                     "has_components": "components" in payload,
@@ -650,17 +912,7 @@ class SDT_Manager_Interface:
             strict: bool = Query(default=False, description="Use strict validation"),
             thorough: bool = Query(default=True, description="Perform thorough schema validation")
         ):
-            """
-            Endpoint to validate a CycloneDX payload without conversion.
-            
-            Args:
-                request: Request containing CycloneDX payload
-                strict: Whether to use strict validation
-                thorough: Whether to perform complete schema validation
-            
-            Returns:
-                JSONResponse: Validation results
-            """
+            """Endpoint to validate a CycloneDX payload without conversion."""
             try:
                 payload = await request.json()
                 

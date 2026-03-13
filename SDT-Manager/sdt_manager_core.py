@@ -6,6 +6,8 @@ from sdt_lifecycle_manager import SDT_LifeCycleManager
 from sdt_connector_manager import SDT_ConnectorManager
 from watchtower_manager import WatchTower_LifeCycleManager
 from sdt_manager_interface import SDT_Manager_Interface
+from sdt_credential_store import SDTCredentialStore
+from sdt_authentication_manager import SDTAuthenticationManager
 from adapter_all import DTModelAdapter
 
 # Configure logging
@@ -39,6 +41,21 @@ class SDT_ManagerCore:
         # Initialize adapter before CCM manager so it's available for the API
         self.sdt_adapter = DTModelAdapter()
         LOGGER.info(f"Adapter for DT Model has been instantiated with host={sdt_interface_host}, port={sdt_interface_port}")
+        
+        # Initialize SQLite credential store
+        db_path = os.environ.get('CREDENTIAL_DB_PATH', 'sdt_credentials.db')
+        self.credential_store = SDTCredentialStore(db_path=db_path)
+        LOGGER.info("SDT Credential Store has been instantiated")
+        
+        # Initialize Authentication Manager
+        self.auth_manager = SDTAuthenticationManager(
+            credential_store=self.credential_store,
+            am_base_url=os.environ.get('AM_BASE_URL'),
+            wallet_controller_url=os.environ.get('WALLET_CONTROLLER_URL'),
+            wallet_controller_key=os.environ.get('WALLET_CONTROLLER_KEY'),
+            digital_twin_api_key=os.environ.get('DIGITAL_TWIN_API_KEY'),
+        )
+        LOGGER.info("SDT Authentication Manager has been instantiated")
         
         # Initialize NBI server (SDT Manager Interface)
         self.sdt_manager = SDT_Manager_Interface(self)
