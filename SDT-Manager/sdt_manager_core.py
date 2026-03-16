@@ -46,6 +46,11 @@ class SDT_ManagerCore:
         db_path = os.environ.get('CREDENTIAL_DB_PATH', 'sdt_credentials.db')
         self.credential_store = SDTCredentialStore(db_path=db_path)
         LOGGER.info("SDT Credential Store has been instantiated")
+
+        # Clean up any stale credentials left over from a previous process run.
+        # Since pod_map and sdt_to_watchtower_map are in-memory, any credentials
+        # in the DB at startup belong to deployments we no longer track.
+        self._cleanup_stale_credentials()
         
         # Initialize Authentication Manager
         self.auth_manager = SDTAuthenticationManager(
@@ -74,7 +79,36 @@ class SDT_ManagerCore:
         self.api_thread = None
         
         LOGGER.info("SDT Manager Core has been instantiated and initialized.")
-    
+
+    def _cleanup_stale_credentials(self):
+        """
+        Remove all credential rows left over from a previous process run.
+
+        On startup the in-memory pod_map, sdt_to_ids_map, and
+        sdt_to_watchtower_map are empty, so any rows already in the
+        credential store belong to deployments we can no longer manage.
+        Purging them keeps the store consistent with the live cluster state.
+
+        Only SDT rows (linked_sdt_id=NULL) are targeted directly —
+        delete_all_for_sdt() cascades to linked component rows automatically.
+        """
+        stale = self.credential_store.list_all()
+        if not stale:
+            LOGGER.info("Credential store is clean — no stale entries found")
+            return
+
+        sdt_ids = [r["sdt_id"] for r in stale if not r.get("linked_sdt_id")]
+        total = len(stale)
+
+        for sdt_id in sdt_ids:
+            self.credential_store.delete_all_for_sdt(sdt_id)
+            LOGGER.info(f"Removed stale credentials for SDT {sdt_id}")
+
+        LOGGER.info(
+            f"Startup cleanup complete: removed {total} stale credential "
+            f"row(s) across {len(sdt_ids)} SDT deployment(s)"
+        )
+
     def start(self):
         """Start all components of the SDT Manager"""
         LOGGER.info("Starting SDT Manager...")
