@@ -8,14 +8,19 @@ SDT_ManagerCore as part of the deploy / delete lifecycle — not as a
 standalone CLI.
 
 Flow (called during SDT deployment):
-  1. Register SDT via wallet controller  →  POST /wallet/digital-twins
-  2. Poll AM until status == "issued"    →  GET  /api/digital-twins/<sdt_id>
-  3. Fetch OAuth2 access token           →  POST /oauth/token (Basic Auth)
+  1. Register SDT via wallet controller  ->  POST /wallet/digital-twins
+  2. Poll AM until status == "issued"    ->  GET  /api/digital-twins/<sdt_id>
+  3. Fetch OAuth2 access token           ->  POST /oauth/token (Basic Auth)
   4. Store credentials in SQLite via SDTCredentialStore
+     - One row for the SDT itself        (component_type='sdt')
+     - One row for the IDS-SDT connector (component_type='ids_connector',
+                                          linked_sdt_id=sdt_id)
+     - One row for the Watchtower        (component_type='watchtower',
+                                          linked_sdt_id=sdt_id)
 
 Flow (called during SDT deletion):
-  1. Delete twin via wallet controller   →  DELETE /wallet/digital-twins/<sdt_id>
-  2. Remove credentials from SQLite
+  1. Delete twin via wallet controller   ->  DELETE /wallet/digital-twins/<sdt_id>
+  2. Remove ALL credential rows for this SDT (own row + linked components)
 """
 
 import os
@@ -24,7 +29,12 @@ import logging
 import requests
 from typing import Optional, Dict, Tuple
 
-from sdt_credential_store import SDTCredentialStore #imported to provide Hint to class SDTAuthenticationManager about the type of credential_store parameter
+from sdt_credential_store import (
+    SDTCredentialStore,
+    COMPONENT_SDT,
+    COMPONENT_IDS_CONNECTOR,
+    COMPONENT_WATCHTOWER,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,7 +72,7 @@ class SDTAuthenticationManager:
         """
         self.credential_store = credential_store
 
-        # Configuration from args → env → defaults
+        # Configuration from args -> env -> defaults
         self.am_base_url = (
             am_base_url
             or os.environ.get("AM_BASE_URL", "http://iam.cobalt.local:3100")
@@ -91,18 +101,34 @@ class SDTAuthenticationManager:
         )
 
     # ------------------------------------------------------------------
-    # Public API — called by SDT_ManagerCore
+    # Public API — called by SDT_ManagerCore / SDT_Manager_Interface
     # ------------------------------------------------------------------
 
-    def register_and_get_token(self, sdt_id: str,
-                               twin_name: Optional[str] = None
-                               ) -> Tuple[bool, Optional[str]]:
+    def register_and_get_token(
+        self,
+        sdt_id: str,
+        twin_name: Optional[str] = None,
+        ids_connector_id: Optional[str] = None,
+        watchtower_id: Optional[str] = None,
+    ) -> Tuple[bool, Optional[str]]:
         """
         Full registration + token flow for a newly deployed SDT.
 
+        After obtaining the token the method stores credentials in SQLite for:
+          - The SDT itself                          (component_type='sdt')
+          - The IDS-SDT connector (if provided)     (component_type='ids_connector')
+          - The Watchtower instance (if provided)   (component_type='watchtower')
+
+        All three rows carry the same client_id, client_secret, and access_token
+        because they operate under a single wallet registration. The IDS-SDT and
+        Watchtower rows are linked back to the SDT via linked_sdt_id so they can
+        be queried and cleaned up by SDT identifier alone.
+
         Args:
-            sdt_id:    Hexadecimal identifier of the SDT (from lifecycle manager).
-            twin_name: Human-readable name (defaults to "SDT-<sdt_id>").
+            sdt_id:           Hexadecimal identifier of the SDT.
+            twin_name:        Human-readable name (defaults to "SDT-<sdt_id>").
+            ids_connector_id: Hex identifier of the IDS-SDT connector (may be None).
+            watchtower_id:    Hex identifier of the Watchtower instance (may be None).
 
         Returns:
             (success: bool, access_token: str | None)
@@ -116,34 +142,74 @@ class SDTAuthenticationManager:
             LOGGER.error(f"Registration failed for SDT {sdt_id}")
             return False, None
 
-        # Persist client credentials in SQLite
+        # Step 2 — Persist SDT client credentials in SQLite
         self.credential_store.store_credentials(
             sdt_id=sdt_id,
             client_id=client_id,
             client_secret=client_secret,
             token_scope=self.twin_scope,
+            linked_sdt_id=None,
+            component_type=COMPONENT_SDT,
         )
 
-        # Step 2 — Poll AM until credential is issued
+        # Step 3 — Poll AM until credential is issued
         if not self._poll_until_issued(sdt_id):
             LOGGER.error(f"Credential issuance timed out for SDT {sdt_id}")
             return False, None
 
-        # Step 3 — Fetch OAuth2 token
+        # Step 4 — Fetch OAuth2 token
         access_token = self._fetch_token(client_id, client_secret)
         if not access_token:
             LOGGER.error(f"Token acquisition failed for SDT {sdt_id}")
             return False, None
 
-        # Store the token in SQLite
+        # Step 5 — Store the token for the SDT
         self.credential_store.store_access_token(sdt_id, access_token)
-        LOGGER.info(f"Authentication flow completed for SDT {sdt_id}")
+
+        # Step 6 — Store credentials for the IDS-SDT connector (if present)
+        if ids_connector_id:
+            self.credential_store.store_credentials(
+                sdt_id=ids_connector_id,
+                client_id=client_id,
+                client_secret=client_secret,
+                token_scope=self.twin_scope,
+                linked_sdt_id=sdt_id,
+                component_type=COMPONENT_IDS_CONNECTOR,
+            )
+            self.credential_store.store_access_token(ids_connector_id, access_token)
+            LOGGER.info(
+                f"Stored credentials for IDS-SDT connector {ids_connector_id} "
+                f"(linked to SDT {sdt_id})"
+            )
+
+        # Step 7 — Store credentials for the Watchtower instance (if present)
+        if watchtower_id:
+            self.credential_store.store_credentials(
+                sdt_id=watchtower_id,
+                client_id=client_id,
+                client_secret=client_secret,
+                token_scope=self.twin_scope,
+                linked_sdt_id=sdt_id,
+                component_type=COMPONENT_WATCHTOWER,
+            )
+            self.credential_store.store_access_token(watchtower_id, access_token)
+            LOGGER.info(
+                f"Stored credentials for Watchtower {watchtower_id} "
+                f"(linked to SDT {sdt_id})"
+            )
+
+        LOGGER.info(
+            f"Authentication flow completed for SDT {sdt_id} — "
+            f"IDS connector: {ids_connector_id or 'none'}, "
+            f"Watchtower: {watchtower_id or 'none'}"
+        )
         return True, access_token
 
     def delete_twin_auth(self, sdt_id: str) -> bool:
         """
-        Delete twin registration from wallet controller and remove
-        credentials from the local store.
+        Delete twin registration from wallet controller and remove ALL
+        credential rows for this SDT deployment (own row + IDS-SDT connector
+        + Watchtower) from the local store.
 
         Args:
             sdt_id: Hexadecimal identifier of the SDT.
@@ -156,8 +222,8 @@ class SDTAuthenticationManager:
         # Delete from wallet controller
         wallet_ok = self._delete_from_wallet(sdt_id)
 
-        # Always clean up local store regardless of wallet result
-        store_ok = self.credential_store.delete_credentials(sdt_id)
+        # Remove the SDT row plus all linked component rows from SQLite
+        store_ok = self.credential_store.delete_all_for_sdt(sdt_id)
 
         if wallet_ok and store_ok:
             LOGGER.info(f"Authentication data fully cleaned for SDT {sdt_id}")
@@ -172,10 +238,10 @@ class SDTAuthenticationManager:
 
     def get_token_for_sdt(self, sdt_id: str) -> Optional[str]:
         """
-        Retrieve the stored access token for an SDT.
+        Retrieve the stored access token for an SDT or any linked component.
 
         Args:
-            sdt_id: Hexadecimal identifier of the SDT.
+            sdt_id: Hexadecimal identifier of the component.
 
         Returns:
             The access token string, or None.
@@ -352,7 +418,7 @@ class SDTAuthenticationManager:
                     f"SDT {sdt_id} not found in wallet — already deleted"
                 )
                 return True
-            
+
             if response.status_code == 200:
                 LOGGER.info(f"SDT {sdt_id} deleted from wallet controller")
                 return True

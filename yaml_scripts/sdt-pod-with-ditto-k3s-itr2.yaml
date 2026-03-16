@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: sdt-container
-          image: sdt-main-image:v0.2.7
+          image: docker.io/library/sdt-main-image:v0.2.7 #the format to refer to images in k3s image registry
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000 #for sdt interface
