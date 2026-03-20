@@ -149,16 +149,22 @@ class SDT_Manager_Interface:
         sdt_service_name = self._get_sdt_service_name()
         sdt_port = int(os.environ.get("SDT_AUTH_PORT", "8080"))
         if sdt_service_name:
-            self._send_token_to_service(sdt_service_name, sdt_port, auth_payload, "SDT")
+            self._send_token_to_service(
+                sdt_service_name, sdt_port, auth_payload, "SDT",
+                endpoint="/auth/token"
+            )
         else:
             LOGGER.warning("Could not resolve SDT service — skipping token delivery to SDT")
 
         # --- IDS-SDT connector service ---
         if ids_connector_id:
             ids_service_name = self._get_ids_sdt_service_name()
-            ids_port = int(os.environ.get("IDS_SDT_AUTH_PORT", "8080"))
+            ids_port = int(os.environ.get("IDS_SDT_AUTH_PORT", "8004"))
             if ids_service_name:
-                self._send_token_to_service(ids_service_name, ids_port, auth_payload, "IDS-SDT")
+                self._send_token_to_service(
+                    ids_service_name, ids_port, auth_payload, "IDS-SDT",
+                    endpoint="/api/IDSconnector/SDT/configauth"
+                )
             else:
                 LOGGER.warning("Could not resolve IDS-SDT service — skipping token delivery")
 
@@ -166,21 +172,26 @@ class SDT_Manager_Interface:
         if watchtower_id:
             wt_service_name = "watchtower-service"
             wt_port = int(os.environ.get("WATCHTOWER_AUTH_PORT", "8080"))
-            self._send_token_to_service(wt_service_name, wt_port, auth_payload, "Watchtower")
+            self._send_token_to_service(
+                wt_service_name, wt_port, auth_payload, "Watchtower",
+                endpoint="/auth/token"
+            )
 
         LOGGER.info(f"Token distribution completed for SDT {sdt_identifier}")
 
     def _send_token_to_service(self, service_name: str, port: int,
-                                auth_payload: dict, component_label: str):
+                                auth_payload: dict, component_label: str,
+                                endpoint: str = "/auth/token"):
         """
-        POST the credentials JSON payload to a component's /auth/token
-        endpoint using its Kubernetes service ClusterIP.
+        POST the credentials JSON payload to a component's auth endpoint
+        using its Kubernetes service ClusterIP.
 
         Args:
             service_name:    Kubernetes service name.
             port:            Port the component listens on.
             auth_payload:    The full credentials dict to send.
             component_label: Human-readable label for logging.
+            endpoint:        HTTP path to POST to (default: /auth/token).
         """
         import requests as req
 
@@ -192,7 +203,7 @@ class SDT_Manager_Interface:
             )
             return
 
-        url = f"http://{cluster_ip}:{port}/auth/token"
+        url = f"http://{cluster_ip}:{port}{endpoint}"
         LOGGER.info(f"Sending credentials to {component_label} at {url}")
 
         try:
