@@ -151,7 +151,7 @@ class SDT_Manager_Interface:
         if sdt_service_name:
             self._send_token_to_service(
                 sdt_service_name, sdt_port, auth_payload, "SDT",
-                endpoint="/auth/token"
+                endpoint="/api/SDT/auth/token"
             )
         else:
             LOGGER.warning("Could not resolve SDT service — skipping token delivery to SDT")

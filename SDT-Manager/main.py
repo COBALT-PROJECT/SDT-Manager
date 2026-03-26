@@ -1,4 +1,7 @@
 # File: main.py
+from dotenv import load_dotenv
+load_dotenv()
+
 from sdt_manager_core import SDT_ManagerCore
 import logging
 import time

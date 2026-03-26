@@ -3,6 +3,7 @@ pydantic
 flask
 requests
 uvicorn
+python-dotenv
 cyclonedx-python-lib
 cyclonedx-python-lib[validation]
 gitpython
