@@ -1,0 +1,173 @@
+(sdt_manager_env) sdtm@sdtm:~/SDTM/SDT-Manager/timestamps_component$ python3 main.py 
+2026-04-07 12:08:03,934 - sdt_manager_core - INFO - Initializing SDT Manager Core...
+2026-04-07 12:08:03,934 - sdt_performance_tracker - INFO - PerformanceTracker initialized
+2026-04-07 12:08:03,934 - sdt_manager_core - INFO - Performance Tracker has been instantiated
+2026-04-07 12:08:03,934 - sdt_lifecycle_manager - INFO - SDT Lifecycle Manager initialized
+2026-04-07 12:08:03,935 - sdt_performance_tracker - INFO - [PERF] component_instantiation | SDT_LifeCycleManager => 0.0002s [completed]
+2026-04-07 12:08:03,935 - sdt_manager_core - INFO - SDT Lifecycle Manager has been instantiated
+2026-04-07 12:08:03,935 - watchtower_manager - INFO - Watchtower Lifecycle Manager initialized
+2026-04-07 12:08:03,935 - sdt_performance_tracker - INFO - [PERF] component_instantiation | WatchTower_LifeCycleManager => 0.0001s [completed]
+2026-04-07 12:08:03,935 - sdt_manager_core - INFO - Watchtower Lifecycle Manager has been instantiated
+2026-04-07 12:08:03,935 - ids_connector - INFO - IDS Connector Manager initialized
+2026-04-07 12:08:03,935 - sdt_connector_manager - INFO - SDT Connector Manager initialized
+2026-04-07 12:08:03,935 - sdt_performance_tracker - INFO - [PERF] component_instantiation | SDT_ConnectorManager => 0.0002s [completed]
+2026-04-07 12:08:03,935 - sdt_manager_core - INFO - SDT Connector Manager has been instantiated
+SDT Manager-Adapter instance created.
+2026-04-07 12:08:03,935 - sdt_performance_tracker - INFO - [PERF] component_instantiation | DTModelAdapter => 0.0001s [completed]
+2026-04-07 12:08:03,936 - sdt_manager_core - INFO - Adapter for DT Model has been instantiated with host=localhost, port=30008
+2026-04-07 12:08:03,937 - sdt_credential_store - INFO - Credential store database initialized
+2026-04-07 12:08:03,937 - sdt_credential_store - INFO - SDT Credential Store initialized (db=sdt_credentials.db)
+2026-04-07 12:08:03,937 - sdt_performance_tracker - INFO - [PERF] component_instantiation | SDTCredentialStore => 0.0013s [completed]
+2026-04-07 12:08:03,937 - sdt_manager_core - INFO - SDT Credential Store has been instantiated
+2026-04-07 12:08:03,938 - sdt_manager_core - INFO - Credential store is clean — no stale entries found
+2026-04-07 12:08:03,938 - sdt_authentication_manager - INFO - SDT Authentication Manager initialized (AM=http://iam.cobalt.local:3100, Wallet=http://iam.cobalt.local:3200)
+2026-04-07 12:08:03,938 - sdt_performance_tracker - INFO - [PERF] component_instantiation | SDTAuthenticationManager => 0.0001s [completed]
+2026-04-07 12:08:03,938 - sdt_manager_core - INFO - SDT Authentication Manager has been instantiated
+2026-04-07 12:08:03,950 - sdt_manager_interface - INFO - SDT Manager Interface initialized
+2026-04-07 12:08:03,950 - sdt_performance_tracker - INFO - [PERF] component_instantiation | SDT_Manager_Interface => 0.0114s [completed]
+2026-04-07 12:08:03,950 - sdt_manager_core - INFO - SDT Manager API has been instantiated and will listen on 0.0.0.0:8008
+2026-04-07 12:08:03,950 - sdt_manager_core - INFO - SDT Manager Core has been instantiated and initialized.
+2026-04-07 12:08:03,950 - sdt_manager_core - INFO - Starting SDT Manager...
+2026-04-07 12:08:03,950 - sdt_manager_interface - INFO - Starting SDT Manager API server on 0.0.0.0:8008
+2026-04-07 12:08:03,950 - sdt_manager_core - INFO - API server thread started on 0.0.0.0:8008
+2026-04-07 12:08:03,951 - sdt_manager_core - INFO - SDT Manager started successfully
+2026-04-07 12:08:03,951 - __main__ - INFO - SDT Manager running. Press CTRL+C to exit.
+INFO:     Started server process [3956543]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8008 (Press CTRL+C to quit)
+2026-04-07 12:08:11,941 - sdt_performance_tracker - INFO - [PERF] api_endpoint | GET /docs => 0.0004s [completed]
+INFO:     127.0.0.1:58990 - "GET /docs HTTP/1.1" 200 OK
+2026-04-07 12:08:12,433 - sdt_performance_tracker - INFO - [PERF] api_endpoint | GET /openapi.json => 0.0144s [completed]
+INFO:     127.0.0.1:58990 - "GET /openapi.json HTTP/1.1" 200 OK
+2026-04-07 12:08:26,251 - sdt_performance_tracker - INFO - [PERF] api_endpoint | GET /api/SDTM/deployments => 0.0006s [completed]
+INFO:     127.0.0.1:40496 - "GET /api/SDTM/deployments HTTP/1.1" 200 OK
+2026-04-07 12:08:42,598 - sdt_lifecycle_manager - INFO - Deploying SDT pod with ID: c6e72c49
+2026-04-07 12:08:42,834 - sdt_lifecycle_manager - INFO - deployment.apps/sdt-deployment created
+
+2026-04-07 12:08:47,982 - sdt_lifecycle_manager - INFO - sdt-deployment-555b7cbdcd-v4wfj
+2026-04-07 12:08:47,982 - sdt_lifecycle_manager - INFO - Mapped Pod Name: sdt-deployment-555b7cbdcd-v4wfj to ID: c6e72c49
+2026-04-07 12:08:47,982 - sdt_lifecycle_manager - INFO - Current Pod Map: {'sdt-deployment-555b7cbdcd-v4wfj': 'c6e72c49'}
+2026-04-07 12:08:47,982 - sdt_lifecycle_manager - INFO - Checking if SDT pod is running...
+2026-04-07 12:08:48,126 - sdt_lifecycle_manager - INFO - Running
+2026-04-07 12:08:48,126 - sdt_lifecycle_manager - INFO - SDT pod is running.
+2026-04-07 12:08:48,126 - sdt_lifecycle_manager - INFO - Deploying SDT service...
+2026-04-07 12:08:48,437 - sdt_lifecycle_manager - INFO - service/sdt-service unchanged
+
+2026-04-07 12:08:48,438 - sdt_performance_tracker - INFO - [PERF] component_instantiation | deploy_sdt_pod_and_service => 5.8394s [completed]
+2026-04-07 12:08:48,438 - sdt_manager_interface - INFO - SDT deployed successfully: sdt-deployment-555b7cbdcd-v4wfj, ID=c6e72c49
+2026-04-07 12:08:48,438 - sdt_manager_interface - INFO - Deploying IDS-SDT connector...
+2026-04-07 12:08:48,438 - sdt_connector_manager - INFO - Deploying ids_sdt connector via SDT Connector Manager
+2026-04-07 12:08:48,438 - ids_connector - INFO - Starting IDS ids_sdt connector deployment with ID: 7ee865eb
+2026-04-07 12:08:48,438 - ids_connector - INFO - Applying configuration files...
+2026-04-07 12:08:48,438 - ids_connector - INFO - Applying shared configurations...
+2026-04-07 12:08:48,438 - ids_connector - INFO - Applying ca-pemstore.yaml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ca-pemstore.yaml
+2026-04-07 12:08:48,656 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ca-pemstore.yaml
+2026-04-07 12:08:48,656 - ids_connector - INFO - Successfully applied ca-pemstore.yaml
+2026-04-07 12:08:50,656 - ids_connector - INFO - Applying ids_sdt specific configurations...
+2026-04-07 12:08:50,656 - ids_connector - INFO - Applying be-dataapp-consumer-configmap.yaml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/be-dataapp-consumer-configmap.yaml
+2026-04-07 12:08:50,890 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/be-dataapp-consumer-configmap.yaml
+2026-04-07 12:08:50,890 - ids_connector - INFO - Successfully applied be-dataapp-consumer-configmap.yaml
+2026-04-07 12:08:52,890 - ids_connector - INFO - Applying ecc-consumer-configmap-v.2.yaml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ecc-consumer-configmap-v.2.yaml
+2026-04-07 12:08:53,127 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ecc-consumer-configmap-v.2.yaml
+2026-04-07 12:08:53,127 - ids_connector - INFO - Successfully applied ecc-consumer-configmap-v.2.yaml
+2026-04-07 12:08:55,127 - ids_connector - INFO - Applying consumer-compiled-v-0.3.yaml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/consumer-compiled-v-0.3.yaml
+2026-04-07 12:08:55,696 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/consumer-compiled-v-0.3.yaml
+2026-04-07 12:08:55,696 - ids_connector - INFO - Successfully applied consumer-compiled-v-0.3.yaml
+2026-04-07 12:08:57,696 - ids_connector - INFO - Applying ids_connector_sdt_k8s_deployment.yml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ids_connector_sdt_k8s_deployment.yml
+2026-04-07 12:08:58,052 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ids_connector_sdt_k8s_deployment.yml
+2026-04-07 12:08:58,052 - ids_connector - INFO - Successfully applied ids_connector_sdt_k8s_deployment.yml
+2026-04-07 12:09:00,053 - ids_connector - INFO - Applying pods_sync_k3s.yml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/pods_sync_k3s.yml
+2026-04-07 12:09:00,595 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/pods_sync_k3s.yml
+2026-04-07 12:09:00,595 - ids_connector - INFO - Successfully applied pods_sync_k3s.yml
+2026-04-07 12:09:02,597 - ids_connector - INFO - All configuration files applied successfully
+2026-04-07 12:09:17,743 - ids_connector - INFO - Command executed successfully: kubectl get deployments -l io.kompose.service=tc-consumer -o jsonpath='{.items[0].metadata.name}'
+2026-04-07 12:09:17,886 - ids_connector - INFO - Command executed successfully: kubectl get deployment ids-connector-sdt-deployment -o jsonpath='{.metadata.name}' --ignore-not-found=true
+2026-04-07 12:09:18,027 - ids_connector - INFO - Command executed successfully: kubectl get deployment ids-sync-service -o jsonpath='{.metadata.name}' --ignore-not-found=true
+2026-04-07 12:09:18,028 - ids_connector - INFO - Mapped tc-consumer Deployment: tc-consumer to ID: 7ee865eb
+2026-04-07 12:09:18,028 - ids_connector - INFO - Mapped ids-connector-sdt Deployment: ids-connector-sdt-deployment to ID: 7ee865eb
+2026-04-07 12:09:18,028 - ids_connector - INFO - Mapped ids-sync-service Deployment: ids-sync-service to ID: 7ee865eb
+2026-04-07 12:09:18,028 - ids_connector - INFO - Total deployments mapped: 3
+2026-04-07 12:09:18,028 - ids_connector - INFO - Current Deployment Map: {'tc-consumer': '7ee865eb', 'ids-connector-sdt-deployment': '7ee865eb', 'ids-sync-service': '7ee865eb'}
+2026-04-07 12:09:18,028 - ids_connector - INFO - Checking if deployment tc-consumer is ready...
+2026-04-07 12:09:18,169 - ids_connector - INFO - Command executed successfully: kubectl get deployment tc-consumer -o jsonpath='{.status.readyReplicas}'
+2026-04-07 12:09:18,314 - ids_connector - INFO - Command executed successfully: kubectl get deployment tc-consumer -o jsonpath='{.spec.replicas}'
+2026-04-07 12:09:18,314 - ids_connector - INFO - Deployment tc-consumer is ready (1/1 replicas)
+2026-04-07 12:09:18,314 - ids_connector - INFO - IDS ids_sdt connector deployment completed successfully
+2026-04-07 12:09:18,314 - sdt_connector_manager - INFO - Successfully deployed ids_sdt connector: tc-consumer with ID: 7ee865eb
+2026-04-07 12:09:18,314 - sdt_performance_tracker - INFO - [PERF] component_instantiation | deploy_ids_sdt_connector => 29.8765s [completed]
+2026-04-07 12:09:18,314 - sdt_manager_interface - INFO - IDS-SDT connector deployed: tc-consumer, ID=7ee865eb
+2026-04-07 12:09:18,454 - watchtower_manager - ERROR - Command failed: kubectl get pods -l app=watchtower -o jsonpath='{.items[0].metadata.name}'
+2026-04-07 12:09:18,455 - watchtower_manager - ERROR - Error output: error: error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":""}}
+
+
+
+2026-04-07 12:09:18,455 - watchtower_manager - WARNING - No Watchtower pod found
+2026-04-07 12:09:18,455 - watchtower_manager - INFO - No existing Watchtower pod found in cluster
+2026-04-07 12:09:18,455 - sdt_manager_interface - INFO - No existing Watchtower found, deploying...
+2026-04-07 12:09:18,455 - watchtower_manager - INFO - Starting Watchtower deployment process...
+2026-04-07 12:09:18,455 - watchtower_manager - INFO - Deploying Watchtower pod with ID: 61da0fa5
+2026-04-07 12:09:18,455 - watchtower_manager - INFO - Applying deployment from: /home/sdtm/SDTM/SDT-Manager/yaml_scripts/watchtower-deployment.yaml
+2026-04-07 12:09:18,633 - watchtower_manager - INFO - deployment.apps/watchtower-deployment created
+
+2026-04-07 12:09:23,848 - watchtower_manager - INFO - watchtower-deployment-884f9456d-9npkr
+2026-04-07 12:09:23,848 - watchtower_manager - INFO - Retrieved Watchtower pod name: watchtower-deployment-884f9456d-9npkr
+2026-04-07 12:09:23,848 - watchtower_manager - INFO - Mapped Watchtower Pod Name: watchtower-deployment-884f9456d-9npkr to ID: 61da0fa5
+2026-04-07 12:09:23,848 - watchtower_manager - INFO - Current Watchtower Map: {'watchtower-deployment-884f9456d-9npkr': '61da0fa5'}
+2026-04-07 12:09:23,848 - watchtower_manager - INFO - Checking if Watchtower pod is running...
+2026-04-07 12:09:23,994 - watchtower_manager - INFO - Running
+2026-04-07 12:09:23,994 - watchtower_manager - INFO - Watchtower pod is running.
+2026-04-07 12:09:23,994 - watchtower_manager - INFO - Deploying Watchtower service...
+2026-04-07 12:09:23,994 - watchtower_manager - INFO - Applying service from: /home/sdtm/SDTM/SDT-Manager/yaml_scripts/watchtower-service.yaml
+2026-04-07 12:09:24,226 - watchtower_manager - INFO - service/watchtower-service created
+
+2026-04-07 12:09:24,227 - watchtower_manager - INFO - Watchtower service deployed successfully
+2026-04-07 12:09:24,227 - watchtower_manager - INFO - Watchtower deployment complete: watchtower-deployment-884f9456d-9npkr (ID: 61da0fa5)
+2026-04-07 12:09:24,227 - sdt_performance_tracker - INFO - [PERF] component_instantiation | deploy_watchtower => 5.9122s [completed]
+2026-04-07 12:09:24,227 - sdt_manager_interface - INFO - Watchtower deployed: watchtower-deployment-884f9456d-9npkr, ID=61da0fa5
+2026-04-07 12:09:24,227 - sdt_manager_interface - INFO - Background auth flow started for SDT c6e72c49
+2026-04-07 12:09:24,227 - sdt_authentication_manager - INFO - Starting authentication flow for SDT c6e72c49
+2026-04-07 12:09:24,227 - sdt_authentication_manager - INFO - Registering SDT c6e72c49 with wallet controller
+2026-04-07 12:09:24,229 - sdt_manager_interface - INFO - Auth flow started in background for SDT c6e72c49
+2026-04-07 12:09:24,230 - sdt_performance_tracker - INFO - [PERF] api_endpoint | POST /api/SDTM/digital-twin => 41.6320s [completed]
+INFO:     127.0.0.1:38294 - "POST /api/SDTM/digital-twin HTTP/1.1" 200 OK
+2026-04-07 12:09:27,514 - sdt_authentication_manager - INFO - SDT c6e72c49 registered — client_id=7639f9873702cd10ce487d2b1ceef797
+2026-04-07 12:09:27,518 - sdt_credential_store - INFO - Stored credentials for sdt c6e72c49
+2026-04-07 12:09:27,519 - sdt_authentication_manager - INFO - Polling AM for credential issuance (SDT c6e72c49)
+2026-04-07 12:09:27,525 - sdt_authentication_manager - INFO - SDT c6e72c49 credential status: issued (attempt 1, 0s elapsed)
+2026-04-07 12:09:27,526 - sdt_authentication_manager - INFO - Credential issued for SDT c6e72c49
+2026-04-07 12:09:27,526 - sdt_authentication_manager - INFO - Requesting OAuth2 token from AM
+2026-04-07 12:09:27,552 - sdt_authentication_manager - INFO - OAuth2 token acquired successfully
+2026-04-07 12:09:27,556 - sdt_credential_store - INFO - Stored access token for component c6e72c49
+2026-04-07 12:09:27,559 - sdt_credential_store - INFO - Stored credentials for ids_connector 7ee865eb (linked to SDT c6e72c49)
+2026-04-07 12:09:27,563 - sdt_credential_store - INFO - Stored access token for component 7ee865eb
+2026-04-07 12:09:27,563 - sdt_authentication_manager - INFO - Stored credentials for IDS-SDT connector 7ee865eb (linked to SDT c6e72c49)
+2026-04-07 12:09:27,566 - sdt_credential_store - INFO - Stored credentials for watchtower 61da0fa5 (linked to SDT c6e72c49)
+2026-04-07 12:09:27,570 - sdt_credential_store - INFO - Stored access token for component 61da0fa5
+2026-04-07 12:09:27,570 - sdt_authentication_manager - INFO - Stored credentials for Watchtower 61da0fa5 (linked to SDT c6e72c49)
+2026-04-07 12:09:27,571 - sdt_authentication_manager - INFO - Authentication flow completed for SDT c6e72c49 — IDS connector: 7ee865eb, Watchtower: 61da0fa5
+2026-04-07 12:09:27,571 - sdt_performance_tracker - INFO - [PERF] auth_token_acquisition | register_and_get_token => 3.3435s [completed]
+2026-04-07 12:09:27,571 - sdt_manager_interface - INFO - Distributing credentials to components for SDT c6e72c49
+2026-04-07 12:09:27,723 - sdt_lifecycle_manager - INFO - sdt-service
+2026-04-07 12:09:27,871 - sdt_lifecycle_manager - INFO - 10.43.216.86
+2026-04-07 12:09:27,872 - sdt_manager_interface - INFO - Resolved sdt-service ClusterIP: 10.43.216.86
+2026-04-07 12:09:27,872 - sdt_manager_interface - INFO - Sending credentials to SDT at http://10.43.216.86:8000/api/SDT/auth/token
+2026-04-07 12:09:27,886 - sdt_manager_interface - INFO - Credentials delivered to SDT (sdt-service) — HTTP 200
+2026-04-07 12:09:27,887 - sdt_performance_tracker - INFO - [PERF] token_distribution | send_token_to_sdt => 0.1630s [completed]
+2026-04-07 12:09:28,031 - sdt_lifecycle_manager - INFO - ids-connector-sdt-service
+2026-04-07 12:09:28,175 - sdt_lifecycle_manager - INFO - 10.43.145.242
+2026-04-07 12:09:28,175 - sdt_manager_interface - INFO - Resolved ids-connector-sdt-service ClusterIP: 10.43.145.242
+2026-04-07 12:09:28,175 - sdt_manager_interface - INFO - Sending credentials to IDS-SDT at http://10.43.145.242:8004/api/IDSconnector/SDT/configauth
+2026-04-07 12:09:28,179 - sdt_manager_interface - INFO - Credentials delivered to IDS-SDT (ids-connector-sdt-service) — HTTP 200
+2026-04-07 12:09:28,179 - sdt_performance_tracker - INFO - [PERF] token_distribution | send_token_to_ids_sdt => 0.1473s [completed]
+2026-04-07 12:09:28,329 - sdt_lifecycle_manager - INFO - 10.43.81.88
+2026-04-07 12:09:28,329 - sdt_manager_interface - INFO - Resolved watchtower-service ClusterIP: 10.43.81.88
+2026-04-07 12:09:28,329 - sdt_manager_interface - INFO - Sending credentials to Watchtower at http://10.43.81.88:8080/auth/token
+2026-04-07 12:09:28,331 - sdt_manager_interface - ERROR - Connection to Watchtower (http://10.43.81.88:8080/auth/token) failed: HTTPConnectionPool(host='10.43.81.88', port=8080): Max retries exceeded with url: /auth/token (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x71a493684dd0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+2026-04-07 12:09:28,331 - sdt_performance_tracker - INFO - [PERF] token_distribution | send_token_to_watchtower => 0.1516s [completed]
+2026-04-07 12:09:28,331 - sdt_performance_tracker - INFO - [PERF] token_distribution | distribute_token_all => 0.7599s [completed]
+2026-04-07 12:09:28,331 - sdt_manager_interface - INFO - Token distribution completed for SDT c6e72c49

@@ -1,0 +1,182 @@
+#create sdt, ids-sdt and watchtower pods and services all together
+(sdt_manager_env) sdtm@sdtm:~/SDTM/SDT-Manager/SDT-Manager$ python3 main.py 
+2026-03-11 10:44:46,370 - sdt_manager_core - INFO - Initializing SDT Manager Core...
+2026-03-11 10:44:46,370 - sdt_lifecycle_manager - INFO - SDT Lifecycle Manager initialized
+2026-03-11 10:44:46,370 - sdt_manager_core - INFO - SDT Lifecycle Manager has been instantiated
+2026-03-11 10:44:46,370 - watchtower_manager - INFO - Watchtower Lifecycle Manager initialized
+2026-03-11 10:44:46,371 - sdt_manager_core - INFO - Watchtower Lifecycle Manager has been instantiated
+2026-03-11 10:44:46,371 - ids_connector - INFO - IDS Connector Manager initialized
+2026-03-11 10:44:46,371 - sdt_connector_manager - INFO - SDT Connector Manager initialized
+2026-03-11 10:44:46,371 - sdt_manager_core - INFO - SDT Connector Manager has been instantiated
+SDT Manager-Adapter instance created.
+2026-03-11 10:44:46,371 - sdt_manager_core - INFO - Adapter for DT Model has been instantiated with host=localhost, port=30008
+2026-03-11 10:44:46,379 - sdt_manager_interface - INFO - SDT Manager Interface initialized
+2026-03-11 10:44:46,379 - sdt_manager_core - INFO - SDT Manager API has been instantiated and will listen on 0.0.0.0:8008
+2026-03-11 10:44:46,379 - sdt_manager_core - INFO - SDT Manager Core has been instantiated and initialized.
+2026-03-11 10:44:46,379 - sdt_manager_core - INFO - Starting SDT Manager...
+2026-03-11 10:44:46,380 - sdt_manager_interface - INFO - Starting SDT Manager API server on 0.0.0.0:8008
+2026-03-11 10:44:46,380 - sdt_manager_core - INFO - API server thread started on 0.0.0.0:8008
+2026-03-11 10:44:46,380 - sdt_manager_core - INFO - SDT Manager started successfully
+2026-03-11 10:44:46,380 - __main__ - INFO - SDT Manager running. Press CTRL+C to exit.
+INFO:     Started server process [3387188]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8008 (Press CTRL+C to quit)
+INFO:     127.0.0.1:47170 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47170 - "GET /openapi.json HTTP/1.1" 200 OK
+2026-03-11 10:45:02,269 - sdt_lifecycle_manager - INFO - Deploying SDT pod with ID: 2a31b51b
+2026-03-11 10:45:02,448 - sdt_lifecycle_manager - INFO - deployment.apps/sdt-deployment created
+
+2026-03-11 10:45:07,595 - sdt_lifecycle_manager - INFO - sdt-deployment-7d4676cfdb-xb8mb
+2026-03-11 10:45:07,595 - sdt_lifecycle_manager - INFO - Mapped Pod Name: sdt-deployment-7d4676cfdb-xb8mb to ID: 2a31b51b
+2026-03-11 10:45:07,595 - sdt_lifecycle_manager - INFO - Current Pod Map: {'sdt-deployment-7d4676cfdb-xb8mb': '2a31b51b'}
+2026-03-11 10:45:07,595 - sdt_lifecycle_manager - INFO - Checking if SDT pod is running...
+2026-03-11 10:45:07,737 - sdt_lifecycle_manager - INFO - Running
+2026-03-11 10:45:07,737 - sdt_lifecycle_manager - INFO - SDT pod is running.
+2026-03-11 10:45:07,737 - sdt_lifecycle_manager - INFO - Deploying SDT service...
+2026-03-11 10:45:07,979 - sdt_lifecycle_manager - INFO - service/sdt-service created
+
+2026-03-11 10:45:07,979 - sdt_manager_interface - INFO - SDT deployed successfully: sdt-deployment-7d4676cfdb-xb8mb, 2a31b51b
+2026-03-11 10:45:07,979 - sdt_manager_interface - INFO - Deploying IDS-SDT connector...
+2026-03-11 10:45:07,979 - sdt_connector_manager - INFO - Deploying ids_sdt connector via SDT Connector Manager
+2026-03-11 10:45:07,979 - ids_connector - INFO - Starting IDS ids_sdt connector deployment with ID: 5da9a959
+2026-03-11 10:45:07,979 - ids_connector - INFO - Applying configuration files...
+2026-03-11 10:45:07,980 - ids_connector - INFO - Applying shared configurations...
+2026-03-11 10:45:07,980 - ids_connector - INFO - Applying ca-pemstore.yaml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ca-pemstore.yaml
+2026-03-11 10:45:08,214 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ca-pemstore.yaml
+2026-03-11 10:45:08,215 - ids_connector - INFO - Successfully applied ca-pemstore.yaml
+2026-03-11 10:45:10,215 - ids_connector - INFO - Applying ids_sdt specific configurations...
+2026-03-11 10:45:10,215 - ids_connector - INFO - Applying be-dataapp-consumer-configmap.yaml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/be-dataapp-consumer-configmap.yaml
+2026-03-11 10:45:10,437 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/be-dataapp-consumer-configmap.yaml
+2026-03-11 10:45:10,437 - ids_connector - INFO - Successfully applied be-dataapp-consumer-configmap.yaml
+2026-03-11 10:45:12,437 - ids_connector - INFO - Applying ecc-consumer-configmap-v.2.yaml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ecc-consumer-configmap-v.2.yaml
+2026-03-11 10:45:12,654 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ecc-consumer-configmap-v.2.yaml
+2026-03-11 10:45:12,654 - ids_connector - INFO - Successfully applied ecc-consumer-configmap-v.2.yaml
+2026-03-11 10:45:14,654 - ids_connector - INFO - Applying consumer-compiled-v-0.3.yaml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/consumer-compiled-v-0.3.yaml
+2026-03-11 10:45:15,189 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/consumer-compiled-v-0.3.yaml
+2026-03-11 10:45:15,189 - ids_connector - INFO - Successfully applied consumer-compiled-v-0.3.yaml
+2026-03-11 10:45:17,190 - ids_connector - INFO - Applying ids_connector_sdt_k8s_deployment.yml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ids_connector_sdt_k8s_deployment.yml
+2026-03-11 10:45:17,564 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/ids_connector_sdt_k8s_deployment.yml
+2026-03-11 10:45:17,564 - ids_connector - INFO - Successfully applied ids_connector_sdt_k8s_deployment.yml
+2026-03-11 10:45:19,564 - ids_connector - INFO - Applying pods_sync_k3s.yml from /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/pods_sync_k3s.yml
+2026-03-11 10:45:20,081 - ids_connector - INFO - Command executed successfully: kubectl apply -f /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/pods_sync_k3s.yml
+2026-03-11 10:45:20,081 - ids_connector - INFO - Successfully applied pods_sync_k3s.yml
+2026-03-11 10:45:22,081 - ids_connector - INFO - All configuration files applied successfully
+2026-03-11 10:45:37,223 - ids_connector - INFO - Command executed successfully: kubectl get deployments -l io.kompose.service=tc-consumer -o jsonpath='{.items[0].metadata.name}'
+2026-03-11 10:45:37,361 - ids_connector - INFO - Command executed successfully: kubectl get deployment ids-connector-sdt-deployment -o jsonpath='{.metadata.name}' --ignore-not-found=true
+2026-03-11 10:45:37,500 - ids_connector - INFO - Command executed successfully: kubectl get deployment ids-sync-service -o jsonpath='{.metadata.name}' --ignore-not-found=true
+2026-03-11 10:45:37,500 - ids_connector - INFO - Mapped tc-consumer Deployment: tc-consumer to ID: 5da9a959
+2026-03-11 10:45:37,500 - ids_connector - INFO - Mapped ids-connector-sdt Deployment: ids-connector-sdt-deployment to ID: 5da9a959
+2026-03-11 10:45:37,500 - ids_connector - INFO - Mapped ids-sync-service Deployment: ids-sync-service to ID: 5da9a959
+2026-03-11 10:45:37,500 - ids_connector - INFO - Total deployments mapped: 3
+2026-03-11 10:45:37,500 - ids_connector - INFO - Current Deployment Map: {'tc-consumer': '5da9a959', 'ids-connector-sdt-deployment': '5da9a959', 'ids-sync-service': '5da9a959'}
+2026-03-11 10:45:37,501 - ids_connector - INFO - Checking if deployment tc-consumer is ready...
+2026-03-11 10:45:37,636 - ids_connector - INFO - Command executed successfully: kubectl get deployment tc-consumer -o jsonpath='{.status.readyReplicas}'
+2026-03-11 10:45:37,775 - ids_connector - INFO - Command executed successfully: kubectl get deployment tc-consumer -o jsonpath='{.spec.replicas}'
+2026-03-11 10:45:37,775 - ids_connector - INFO - Deployment tc-consumer is ready (1/1 replicas)
+2026-03-11 10:45:37,775 - ids_connector - INFO - IDS ids_sdt connector deployment completed successfully
+2026-03-11 10:45:37,775 - sdt_connector_manager - INFO - Successfully deployed ids_sdt connector: tc-consumer with ID: 5da9a959
+2026-03-11 10:45:37,775 - sdt_manager_interface - INFO - IDS-SDT connector deployed: tc-consumer, 5da9a959
+2026-03-11 10:45:37,921 - watchtower_manager - ERROR - Command failed: kubectl get pods -l app=watchtower -o jsonpath='{.items[0].metadata.name}'
+2026-03-11 10:45:37,921 - watchtower_manager - ERROR - Error output: error: error executing jsonpath "{.items[0].metadata.name}": Error executing template: array index out of bounds: index 0, length 0. Printing more information for debugging the template:
+        template was:
+                {.items[0].metadata.name}
+        object given to jsonpath engine was:
+                map[string]interface {}{"apiVersion":"v1", "items":[]interface {}{}, "kind":"List", "metadata":map[string]interface {}{"resourceVersion":""}}
+
+
+
+2026-03-11 10:45:37,921 - watchtower_manager - WARNING - No Watchtower pod found
+2026-03-11 10:45:37,921 - watchtower_manager - INFO - No existing Watchtower pod found in cluster
+2026-03-11 10:45:37,921 - sdt_manager_interface - INFO - No existing Watchtower found, deploying...
+2026-03-11 10:45:37,921 - watchtower_manager - INFO - Starting Watchtower deployment process...
+2026-03-11 10:45:37,921 - watchtower_manager - INFO - Deploying Watchtower pod with ID: 3c975c0a
+2026-03-11 10:45:37,921 - watchtower_manager - INFO - Applying deployment from: /home/sdtm/SDTM/SDT-Manager/yaml_scripts/watchtower-deployment.yaml
+2026-03-11 10:45:38,097 - watchtower_manager - INFO - deployment.apps/watchtower-deployment created
+
+2026-03-11 10:45:43,246 - watchtower_manager - INFO - watchtower-deployment-884f9456d-s9lpn
+2026-03-11 10:45:43,246 - watchtower_manager - INFO - Retrieved Watchtower pod name: watchtower-deployment-884f9456d-s9lpn
+2026-03-11 10:45:43,246 - watchtower_manager - INFO - Mapped Watchtower Pod Name: watchtower-deployment-884f9456d-s9lpn to ID: 3c975c0a
+2026-03-11 10:45:43,247 - watchtower_manager - INFO - Current Watchtower Map: {'watchtower-deployment-884f9456d-s9lpn': '3c975c0a'}
+2026-03-11 10:45:43,247 - watchtower_manager - INFO - Checking if Watchtower pod is running...
+2026-03-11 10:45:43,391 - watchtower_manager - INFO - Running
+2026-03-11 10:45:43,391 - watchtower_manager - INFO - Watchtower pod is running.
+2026-03-11 10:45:43,391 - watchtower_manager - INFO - Deploying Watchtower service...
+2026-03-11 10:45:43,391 - watchtower_manager - INFO - Applying service from: /home/sdtm/SDTM/SDT-Manager/yaml_scripts/watchtower-service.yaml
+2026-03-11 10:45:43,622 - watchtower_manager - INFO - service/watchtower-service created
+
+2026-03-11 10:45:43,623 - watchtower_manager - INFO - Watchtower service deployed successfully
+2026-03-11 10:45:43,623 - watchtower_manager - INFO - Watchtower deployment complete: watchtower-deployment-884f9456d-s9lpn (ID: 3c975c0a)
+2026-03-11 10:45:43,623 - sdt_manager_interface - INFO - Watchtower deployed: watchtower-deployment-884f9456d-s9lpn, 3c975c0a
+INFO:     127.0.0.1:47178 - "POST /api/SDTM/digital-twin HTTP/1.1" 200 OK
+
+
+
+
+026-03-11 10:55:15,336 - sdt_lifecycle_manager - INFO - deployment.apps "sdt-deployment" deleted
+
+2026-03-11 10:55:15,336 - sdt_lifecycle_manager - INFO - Successfully deleted deployment: sdt-deployment
+2026-03-11 10:55:15,336 - sdt_lifecycle_manager - INFO - Removed sdt-deployment-7d4676cfdb-xb8mb from pod map after successful deletion.
+2026-03-11 10:55:15,336 - sdt_manager_interface - INFO - SDT deleted successfully: 2a31b51b
+2026-03-11 10:55:15,336 - sdt_manager_interface - INFO - Deleting IDS-SDT connector: 5da9a959
+2026-03-11 10:55:15,336 - sdt_connector_manager - INFO - Deleting connector 5da9a959 via SDT Connector Manager
+2026-03-11 10:55:15,336 - ids_connector - INFO - Detected connector type: ids_sdt for deployment: tc-consumer
+2026-03-11 10:55:15,495 - ids_connector - INFO - Command executed successfully: kubectl delete deployment tc-consumer
+2026-03-11 10:55:15,495 - ids_connector - INFO - Successfully deleted deployment: tc-consumer
+2026-03-11 10:55:15,496 - ids_connector - INFO - Removed tc-consumer from deployment map after successful deletion
+2026-03-11 10:55:15,685 - ids_connector - INFO - Command executed successfully: kubectl delete deployment ids-connector-sdt-deployment
+2026-03-11 10:55:15,685 - ids_connector - INFO - Successfully deleted deployment: ids-connector-sdt-deployment
+2026-03-11 10:55:15,685 - ids_connector - INFO - Removed ids-connector-sdt-deployment from deployment map after successful deletion
+2026-03-11 10:55:15,871 - ids_connector - INFO - Command executed successfully: kubectl delete deployment ids-sync-service
+2026-03-11 10:55:15,872 - ids_connector - INFO - Successfully deleted deployment: ids-sync-service
+2026-03-11 10:55:15,872 - ids_connector - INFO - Removed ids-sync-service from deployment map after successful deletion
+2026-03-11 10:55:16,044 - ids_connector - INFO - Command executed successfully: kubectl get services -l io.kompose.service=tc-consumer -o jsonpath='{.items[0].metadata.name}'
+2026-03-11 10:55:16,314 - ids_connector - INFO - Command executed successfully: kubectl delete service tc-consumer
+2026-03-11 10:55:16,315 - ids_connector - INFO - Successfully deleted service: tc-consumer
+2026-03-11 10:55:16,315 - ids_connector - INFO - Deleted tc-consumer service: tc-consumer
+2026-03-11 10:55:16,521 - ids_connector - INFO - Command executed successfully: kubectl get service ids-connector-sdt-service --ignore-not-found=true -o jsonpath='{.metadata.name}'
+2026-03-11 10:55:16,721 - ids_connector - INFO - Command executed successfully: kubectl delete service ids-connector-sdt-service
+2026-03-11 10:55:16,721 - ids_connector - INFO - Successfully deleted service: ids-connector-sdt-service
+2026-03-11 10:55:16,721 - ids_connector - INFO - Deleted ids-connector-sdt service: ids-connector-sdt-service
+2026-03-11 10:55:16,867 - ids_connector - INFO - Command executed successfully: kubectl get service ids-sync-service --ignore-not-found=true -o jsonpath='{.metadata.name}'
+2026-03-11 10:55:17,021 - ids_connector - INFO - Command executed successfully: kubectl delete service ids-sync-service
+2026-03-11 10:55:17,022 - ids_connector - INFO - Successfully deleted service: ids-sync-service
+2026-03-11 10:55:17,022 - ids_connector - INFO - Deleted ids-sync service: ids-sync-service
+2026-03-11 10:55:17,170 - ids_connector - INFO - Command executed successfully: kubectl delete configmap ca-pemstore --ignore-not-found=true
+2026-03-11 10:55:17,317 - ids_connector - INFO - Command executed successfully: kubectl delete configmap be-dataapp-consumer-configmap --ignore-not-found=true
+2026-03-11 10:55:17,464 - ids_connector - INFO - Command executed successfully: kubectl delete configmap ecc-consumer-configmap --ignore-not-found=true
+2026-03-11 10:55:17,621 - ids_connector - INFO - Command executed successfully: kubectl delete configmap ids-connector-sdt-configmap --ignore-not-found=true
+2026-03-11 10:55:17,768 - ids_connector - INFO - Command executed successfully: kubectl delete configmap ids-sync-config --ignore-not-found=true
+2026-03-11 10:55:17,914 - ids_connector - INFO - Command executed successfully: kubectl delete secret ids-connector-sdt-secret
+2026-03-11 10:55:18,159 - ids_connector - INFO - Command executed successfully: kubectl delete pvc be-dataapp-consumer-claim0 --ignore-not-found=true
+2026-03-11 10:55:46,675 - ids_connector - INFO - Command executed successfully: kubectl delete pvc be-dataapp-consumer-claim1 --ignore-not-found=true
+2026-03-11 10:55:46,941 - ids_connector - INFO - Command executed successfully: kubectl delete pvc be-dataapp-consumer-claim2 --ignore-not-found=true
+2026-03-11 10:55:47,223 - ids_connector - INFO - Command executed successfully: kubectl delete pvc ecc-consumer-claim0 --ignore-not-found=true
+2026-03-11 10:55:47,479 - ids_connector - INFO - Command executed successfully: kubectl delete pvc ecc-consumer-claim1 --ignore-not-found=true
+2026-03-11 10:55:47,480 - ids_connector - INFO - Deletion results for connector 5da9a959: {'deployment_tc-consumer': True, 'deployment_ids-connector-sdt-deployment': True, 'deployment_ids-sync-service': True, 'service_tc-consumer': True, 'service_ids-connector-sdt-service': True, 'service_ids-sync-service': True, 'configmap_ca-pemstore': True, 'configmap_be-dataapp-consumer-configmap': True, 'configmap_ecc-consumer-configmap': True, 'configmap_ids-connector-sdt-configmap': True, 'configmap_ids-sync-config': True, 'secret_ids-connector-sdt-secret': True, 'pvc_be-dataapp-consumer-claim0': True, 'pvc_be-dataapp-consumer-claim1': True, 'pvc_be-dataapp-consumer-claim2': True, 'pvc_ecc-consumer-claim0': True, 'pvc_ecc-consumer-claim1': True, '5da9a959': True}
+2026-03-11 10:55:47,480 - sdt_connector_manager - INFO - Successfully deleted connector 5da9a959
+2026-03-11 10:55:47,480 - sdt_manager_interface - INFO - IDS-SDT connector deleted: 5da9a959
+2026-03-11 10:55:47,629 - watchtower_manager - INFO - watchtower-deployment-884f9456d-s9lpn
+2026-03-11 10:55:47,629 - watchtower_manager - INFO - Retrieved Watchtower pod name: watchtower-deployment-884f9456d-s9lpn
+2026-03-11 10:55:47,629 - watchtower_manager - INFO - Watchtower already registered: watchtower-deployment-884f9456d-s9lpn -> 3c975c0a
+2026-03-11 10:55:47,629 - sdt_manager_interface - INFO - Deleting Watchtower: 3c975c0a
+2026-03-11 10:55:47,629 - watchtower_manager - INFO - Deleting Watchtower with ID: 3c975c0a (cleanup_service=True)
+2026-03-11 10:55:47,629 - watchtower_manager - INFO - Deleting deployment: watchtower-deployment
+2026-03-11 10:55:47,782 - watchtower_manager - INFO - deployment.apps "watchtower-deployment" deleted
+
+2026-03-11 10:55:47,783 - watchtower_manager - INFO - Successfully deleted deployment: watchtower-deployment
+2026-03-11 10:55:47,783 - watchtower_manager - INFO - Removed watchtower-deployment-884f9456d-s9lpn from watchtower map after successful deletion.
+2026-03-11 10:55:47,783 - watchtower_manager - INFO - Deleting Watchtower service
+2026-03-11 10:55:47,943 - watchtower_manager - INFO - service "watchtower-service" deleted
+
+2026-03-11 10:55:47,943 - watchtower_manager - INFO - Successfully deleted Watchtower service
+2026-03-11 10:55:47,943 - watchtower_manager - INFO - Deletion results for Watchtower 3c975c0a: {'deployment_watchtower-deployment': True, 'service_watchtower-service': True, '3c975c0a': True}
+2026-03-11 10:55:47,943 - sdt_manager_interface - INFO - Watchtower deleted: 3c975c0a
+INFO:     127.0.0.1:45520 - "DELETE /api/SDTM/digital-twin/2a31b51b HTTP/1.1" 200 OK
+^C2026-03-11 10:56:09,819 - __main__ - INFO - Shutdown signal received
+2026-03-11 10:56:09,819 - sdt_manager_core - INFO - Stopping SDT Manager...
+2026-03-11 10:56:09,819 - sdt_manager_core - INFO - SDT Manager stopped
+2026-03-11 10:56:09,819 - sdt_manager_core - INFO - Stopping SDT Manager...
+2026-03-11 10:56:09,819 - sdt_manager_core - INFO - SDT Manager stopped
+2026-03-11 10:56:09,819 - __main__ - INFO - SDT Manager shutdown complete
+(sdt_manager_env) sdtm@sdtm:~/SDTM/SDT-Manager/SDT-Manager$ 
