@@ -836,7 +836,7 @@ class DTModelAdapter():
                     logger.error(f"Unsupported file type: {file_type}")
                     continue
                 
-                # Use file_path as key if thingId is disabled
+                # Use filename as key if thingId is disabled
                 things[file_path] = thing
                 logger.info(f"Processed {file_path}")
                 
