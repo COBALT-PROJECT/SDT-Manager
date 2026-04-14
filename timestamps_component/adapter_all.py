@@ -633,7 +633,7 @@ class DTModelAdapter():
             }
         }
         
-        logger.info(f"Successfully transformed CycloneDX payload to Thing: {attributes['thingId']}")
+        logger.info("Successfully transformed CycloneDX payload to Thing")
         return transformed_cyclone
     
     def _extract_item_id(self, item, section, fallback_idx):
@@ -836,8 +836,9 @@ class DTModelAdapter():
                     logger.error(f"Unsupported file type: {file_type}")
                     continue
                 
-                things[thing['attributes']['thingId']] = thing
-                logger.info(f"Processed {file_path} -> {thing['attributes']['thingId']}")
+                # Use file_path as key if thingId is disabled
+                things[file_path] = thing
+                logger.info(f"Processed {file_path}")
                 
             except Exception as e:
                 logger.error(f"Failed to process {file_path}: {str(e)}")
