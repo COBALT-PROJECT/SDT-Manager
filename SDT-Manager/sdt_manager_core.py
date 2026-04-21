@@ -9,6 +9,7 @@ from sdt_manager_interface import SDT_Manager_Interface
 from sdt_credential_store import SDTCredentialStore
 from sdt_authentication_manager import SDTAuthenticationManager
 from adapter_all import DTModelAdapter
+from adapter_all_v2 import DTModelAdapterV2
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -38,9 +39,14 @@ class SDT_ManagerCore:
         self.connector_manager = SDT_ConnectorManager()
         LOGGER.info("SDT Connector Manager has been instantiated")
         
-        # Initialize adapter before CCM manager so it's available for the API
-        self.sdt_adapter = DTModelAdapter()
-        LOGGER.info(f"Adapter for DT Model has been instantiated with host={sdt_interface_host}, port={sdt_interface_port}")
+        # Initialize adapter before CCM manager so it's available for the API.
+        # Change this class manually when switching adapter versions.
+        adapter_class = DTModelAdapterV2
+        self.sdt_adapter = adapter_class()
+        LOGGER.info(
+            f"Adapter for DT Model ({adapter_class.__name__}) has been instantiated "
+            f"with host={sdt_interface_host}, port={sdt_interface_port}"
+        )
         
         # Initialize SQLite credential store
         db_path = os.environ.get('CREDENTIAL_DB_PATH', 'sdt_credentials.db')

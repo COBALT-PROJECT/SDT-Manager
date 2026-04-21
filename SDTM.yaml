@@ -1,145 +1,806 @@
 openapi: 3.0.3
 info:
-  title: Digital Twin Management API
-  description: OpenAPI specification for managing the lifecycle of digital twins based on ETSI ZSM principles.
-  version: 1.0.0
+  title: SDT Deployment API
+  description: >
+    API for managing SDT (Security Digital Twin) deployments, IDS connectors,
+    authentication, and payload adaptation in Kubernetes.
+    Based on ETSI ZSM principles.
+  version: 2.0.0
 
 paths:
+  # ===== SDT DEPLOYMENT ROUTES =====
+
   /api/SDTM/digital-twin:
     post:
-      summary: Create a new digital twin
-      operationId: createDigitalTwin
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                twinId:
-                  type: string
-                  description: Unique identifier for the digital twin
-                modelType:
-                  type: string
-                  description: Type of the digital twin model
-                initialParameters:
-                  type: object
-                  additionalProperties: true
+      summary: Deploy an SDT instance
+      operationId: deploySdt
+      description: >
+        Deploy an SDT pod and service, then automatically:
+        1) Deploy IDS-SDT connector and Watchtower,
+        2) Register the SDT with the wallet controller,
+        3) Obtain an OAuth2 access token,
+        4) Store credentials in SQLite for SDT, IDS-SDT connector and Watchtower,
+        5) Distribute the token to all components via HTTP.
+      tags:
+        - SDT deployment APIs
       responses:
-        '201':
-          description: Digital twin successfully created
-        '400':
-          description: Invalid input data
+        '200':
+          description: SDT deployment successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentResponse'
+        '500':
+          description: Deployment failed
 
   /api/SDTM/digital-twin/{twinId}:
     get:
       summary: Retrieve a digital twin
       operationId: getDigitalTwin
+      description: >
+        Retrieve a digital twin by its hexadecimal identifier.
+        Includes authentication status and linked component info from the credential store.
+      tags:
+        - SDT deployment APIs
       parameters:
-        - name: twinId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/twinId'
       responses:
         '200':
           description: Digital twin data retrieved successfully
           content:
             application/json:
               schema:
+                $ref: '#/components/schemas/DigitalTwinDetail'
+        '404':
+          description: Digital twin not found
+        '500':
+          description: Failed to retrieve digital twin
+
+    delete:
+      summary: Delete an SDT instance by using its identifier
+      operationId: deleteSdt
+      description: >
+        Delete an SDT deployment by identifier. Also deletes the associated
+        IDS-SDT connector, Watchtower, wallet registration, and all linked
+        credentials from SQLite in one transaction.
+      tags:
+        - SDT deployment APIs
+      parameters:
+        - $ref: '#/components/parameters/twinId'
+      responses:
+        '200':
+          description: SDT and all associated resources deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentResponse'
+        '404':
+          description: No deployment found with given identifier
+        '500':
+          description: Deletion failed
+
+  /api/SDTM/deployments:
+    get:
+      summary: List all current SDT deployments
+      operationId: listDeployments
+      description: List all current SDT deployments with detailed information.
+      tags:
+        - SDT deployment APIs
+      responses:
+        '200':
+          description: List of deployments retrieved successfully
+          content:
+            application/json:
+              schema:
                 type: object
                 properties:
-                  twinId:
-                    type: string
-                  modelType:
-                    type: string
-                  currentState:
+                  deployments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DigitalTwinSummary'
+        '500':
+          description: Failed to list deployments
+
+  # ===== IDS CONNECTOR ROUTES =====
+
+  /connector/deploy:
+    post:
+      summary: Deploy an IDS connector
+      operationId: deployConnector
+      tags:
+        - Connector deployment APIs
+      parameters:
+        - name: connector_type
+          in: query
+          required: false
+          description: Type of connector to deploy
+          schema:
+            type: string
+            default: ids_sdt
+      responses:
+        '200':
+          description: Connector deployment successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorResponse'
+        '500':
+          description: Connector deployment failed
+
+  /connector/delete:
+    delete:
+      summary: Delete an IDS connector by identifier
+      operationId: deleteConnector
+      tags:
+        - Connector deployment APIs
+      parameters:
+        - name: cleanup_resources
+          in: query
+          required: false
+          description: Whether to cleanup associated resources
+          schema:
+            type: boolean
+            default: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeletionRequest'
+      responses:
+        '200':
+          description: Connector deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorResponse'
+        '404':
+          description: No connector found with given identifier
+        '500':
+          description: Connector deletion failed
+
+  /connectors:
+    get:
+      summary: List all current IDS connectors
+      operationId: listConnectors
+      tags:
+        - Connector deployment APIs
+      responses:
+        '200':
+          description: List of connectors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connectors:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '500':
+          description: Failed to list connectors
+
+  /connector/{connector_id}:
+    get:
+      summary: Get detailed status of a specific connector
+      operationId: getConnectorStatus
+      tags:
+        - Connector deployment APIs
+      parameters:
+        - name: connector_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the connector
+      responses:
+        '200':
+          description: Connector status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connector_status:
                     type: object
                     additionalProperties: true
-                  metadata:
-                    type: object
-                    properties:
-                      createdAt:
-                        type: string
-                        format: date-time
-                      lastUpdated:
-                        type: string
-                        format: date-time
         '404':
-          description: Digital twin not found
-    
-    put:
-      summary: Update a digital twin
-      operationId: updateDigitalTwin
+          description: No connector found with given identifier
+        '500':
+          description: Failed to get connector status
+
+  # ===== AUTHENTICATION ROUTES =====
+
+  /api/SDTM/auth/{twinId}:
+    get:
+      summary: Get authentication status for an SDT or component
+      operationId: getAuthStatus
+      description: >
+        Retrieve the authentication / credential status for an SDT or any
+        linked component (IDS-SDT connector, Watchtower). If the ID belongs
+        to a linked component, the response includes the parent SDT identifier.
+      tags:
+        - Authentication APIs
       parameters:
-        - name: twinId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                updateParameters:
-                  type: object
-                  additionalProperties: true
+        - $ref: '#/components/parameters/twinId'
       responses:
         '200':
-          description: Digital twin updated successfully
-        '400':
-          description: Invalid update data
+          description: Authentication status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatusResponse'
         '404':
-          description: Digital twin not found
-    
-    delete:
-      summary: Delete a digital twin
-      operationId: deleteDigitalTwin
-      parameters:
-        - name: twinId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '204':
-          description: Digital twin deleted successfully
-        '404':
-          description: Digital twin not found
+          description: No authentication data found for given identifier
+        '500':
+          description: Failed to get auth status
 
-  /api/SDTM/digital-twin/{twinId}/synchronize:
+  /api/SDTM/auth:
+    get:
+      summary: List all SDT credentials (tokens redacted)
+      operationId: listCredentials
+      description: >
+        List all credential records. Access tokens are redacted.
+        Includes linked_sdt_id to distinguish SDT rows from component rows.
+      tags:
+        - Authentication APIs
+      responses:
+        '200':
+          description: List of credential records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credentials:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '500':
+          description: Failed to list credentials
+
+  # ===== SDT ADAPTER ROUTES =====
+
+  /api/SDTM/adapt:
     post:
-      summary: Synchronize a digital twin with its physical counterpart
-      operationId: synchronizeDigitalTwin
+      summary: Convert payload formats to Thing structure
+      operationId: adaptPayload
+      description: >
+        Unified endpoint to convert different payload formats
+        (CycloneDX BOMS, OSCAL, ARM) to Thing payload and send to the SDT controller.
+      tags:
+        - SDT Adaptor APIs
       parameters:
-        - name: twinId
-          in: path
-          required: true
+        - name: toeid
+          in: query
+          required: false
+          description: Target of Evaluation ID
           schema:
             type: string
+            default: "00000000-0000-0000-0000-000000000000"
+        - name: payload_type
+          in: query
+          required: false
+          description: "Type of payload: BOMS, OSCAL, or ARM"
+          schema:
+            type: string
+            default: BOMS
+            enum:
+              - BOMS
+              - OSCAL
+              - ARM
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              properties:
-                syncParameters:
-                  type: object
-                  additionalProperties: true
+              description: >
+                The payload to convert. Structure depends on payload_type:
+                BOMS = CycloneDX BOM, OSCAL = OSCAL component-definition,
+                ARM = Azure Resource Manager template.
+              additionalProperties: true
       responses:
         '200':
-          description: Synchronization successful
-        '400':
-          description: Invalid synchronization data
-        '404':
-          description: Digital twin not found
+          description: Payload processed and sent to SDT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  payload_type:
+                    type: string
+        '500':
+          description: Error processing payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
+  /api/SDTM/adapt/multiple/:
+    post:
+      summary: Adapt multiple files and create cross-referenced Security Artifacts
+      operationId: adaptMultipleFiles
+      tags:
+        - SDT Adaptor APIs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MultipleFilesRequest'
+      responses:
+        '200':
+          description: Multiple files processed and sent to SDT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  total_files:
+                    type: integer
+        '500':
+          description: Error processing multiple files
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/SDTM/adapt/cyclonedx/detect/:
+    get:
+      summary: Detect the BOM type of a CycloneDX payload
+      operationId: detectBomType
+      tags:
+        - SDT Adaptor APIs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: BOM type analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BomTypeAnalysis'
+        '500':
+          description: Error detecting BOM type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/SDTM/adapt/cyclonedx/validate/:
+    get:
+      summary: Validate a CycloneDX payload without conversion
+      operationId: validateCyclonedx
+      tags:
+        - SDT Adaptor APIs
+      parameters:
+        - name: strict
+          in: query
+          required: false
+          description: Use strict validation
+          schema:
+            type: boolean
+            default: false
+        - name: thorough
+          in: query
+          required: false
+          description: Perform thorough schema validation
+          schema:
+            type: boolean
+            default: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        '400':
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===== SYSTEM STATUS ROUTES =====
+
+  /status:
+    get:
+      summary: Get overall system status
+      operationId: getSystemStatus
+      description: >
+        Get overall system status including SDT, Watchtower,
+        IDS connector deployments, and authentication summary.
+      tags:
+        - System
+      responses:
+        '200':
+          description: System status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatus'
+        '500':
+          description: Failed to get system status
+
+  /health:
+    get:
+      summary: Health check endpoint
+      operationId: healthCheck
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /ready:
+    get:
+      summary: Readiness check endpoint
+      operationId: readinessCheck
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+                  service:
+                    type: string
+                    example: SDT Manager API
 
 components:
+  parameters:
+    twinId:
+      name: twinId
+      in: path
+      required: true
+      description: Hexadecimal identifier of the digital twin
+      schema:
+        type: string
+
+  schemas:
+    DeploymentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        pod_name:
+          type: string
+          nullable: true
+        identifier:
+          type: string
+          nullable: true
+        watchtower_id:
+          type: string
+          nullable: true
+        ids_connector_id:
+          type: string
+          nullable: true
+        auth_status:
+          type: string
+          nullable: true
+      required:
+        - success
+        - message
+
+    ConnectorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        deployment_name:
+          type: string
+          nullable: true
+        connector_id:
+          type: string
+          nullable: true
+      required:
+        - success
+        - message
+
+    DeletionRequest:
+      type: object
+      properties:
+        identifier:
+          type: string
+      required:
+        - identifier
+
+    FileConfig:
+      type: object
+      properties:
+        path:
+          type: string
+        type:
+          type: string
+      required:
+        - path
+        - type
+
+    MultipleFilesRequest:
+      type: object
+      properties:
+        file_configs:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileConfig'
+      required:
+        - file_configs
+
+    DigitalTwinDetail:
+      type: object
+      properties:
+        twinId:
+          type: string
+        modelType:
+          type: string
+          example: SDT
+        currentState:
+          type: object
+          properties:
+            podName:
+              type: string
+            deploymentName:
+              type: string
+            status:
+              type: string
+            podIP:
+              type: string
+            nodeName:
+              type: string
+            containerReady:
+              type: boolean
+        authentication:
+          type: object
+          properties:
+            status:
+              type: string
+            hasToken:
+              type: boolean
+            registeredAt:
+              type: string
+              format: date-time
+              nullable: true
+            lastUpdated:
+              type: string
+              format: date-time
+              nullable: true
+            linkedComponents:
+              type: array
+              items:
+                type: object
+                properties:
+                  componentId:
+                    type: string
+                  status:
+                    type: string
+                  hasToken:
+                    type: boolean
+        metadata:
+          type: object
+          properties:
+            createdAt:
+              type: string
+              format: date-time
+            lastUpdated:
+              type: string
+              format: date-time
+
+    DigitalTwinSummary:
+      type: object
+      properties:
+        twinId:
+          type: string
+        modelType:
+          type: string
+          example: SDT
+        currentState:
+          type: object
+          properties:
+            podName:
+              type: string
+            deploymentName:
+              type: string
+            status:
+              type: string
+            podIP:
+              type: string
+            nodeName:
+              type: string
+            containerReady:
+              type: boolean
+        authStatus:
+          type: string
+        metadata:
+          type: object
+          properties:
+            createdAt:
+              type: string
+              format: date-time
+            lastUpdated:
+              type: string
+              format: date-time
+
+    AuthStatusResponse:
+      type: object
+      properties:
+        sdt_id:
+          type: string
+        status:
+          type: string
+        has_token:
+          type: boolean
+        scope:
+          type: string
+          nullable: true
+        registered_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        linked_sdt_id:
+          type: string
+          nullable: true
+          description: Present only if this is a linked component (IDS-SDT or Watchtower)
+
+    BomTypeAnalysis:
+      type: object
+      properties:
+        bom_type:
+          type: string
+        has_components:
+          type: boolean
+        has_services:
+          type: boolean
+        has_dependencies:
+          type: boolean
+        has_vulnerabilities:
+          type: boolean
+        component_count:
+          type: integer
+        service_count:
+          type: integer
+        vulnerability_count:
+          type: integer
+
+    ValidationResult:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        validation_time:
+          type: number
+          format: float
+        strict_mode:
+          type: boolean
+        thorough_check:
+          type: boolean
+        bom_format:
+          type: string
+          nullable: true
+        spec_version:
+          type: string
+          nullable: true
+        serial_number:
+          type: string
+          nullable: true
+
+    SystemStatus:
+      type: object
+      properties:
+        sdt_deployments:
+          type: object
+          properties:
+            count:
+              type: integer
+            deployments:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+        watchtower_instances:
+          type: object
+          properties:
+            count:
+              type: integer
+        ids_connectors:
+          type: object
+          properties:
+            count:
+              type: integer
+            connectors:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+        authentication:
+          type: object
+          properties:
+            total_registered:
+              type: integer
+            issued:
+              type: integer
+            pending:
+              type: integer
+            linked_components:
+              type: integer
+        system_health:
+          type: string
+          example: healthy
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+        service:
+          type: string
+          example: SDT Manager API
+        components:
+          type: object
+          properties:
+            sdt_manager:
+              type: string
+              example: active
+            watchtower_manager:
+              type: string
+              example: active
+            connector_manager:
+              type: string
+              example: active
+            adapter:
+              type: string
+              example: active
+            auth_manager:
+              type: string
+              example: active
+            credential_store:
+              type: string
+              example: active
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+
   securitySchemes:
     OAuth2:
       type: oauth2

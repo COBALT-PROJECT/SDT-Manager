@@ -907,38 +907,59 @@ class SDT_Manager_Interface:
                 payload = await request.json()
 
                 start_time = time.time()
+                validation_payload = None
 
-                if payload_type.lower() == "boms":
-                    LOGGER.info("Validating CycloneDX payload...")
-                    if not self.manager_core.sdt_adapter.validate_cyclonedx_smart(
-                        payload, strict=False, thorough=False
-                    ):
-                        raise ValueError("Invalid CycloneDX payload")
+                # V2 path: unified validation and transformation for all formats.
+                if hasattr(self.manager_core.sdt_adapter, "validate_and_transform"):
+                    validation_result, converted = self.manager_core.sdt_adapter.validate_and_transform(
+                        payload,
+                        payload_type,
+                        strict=True,
+                        thorough=True,
+                    )
 
-                    LOGGER.info("Converting CycloneDX to Thing structure...")
-                    json_payload_str = json.dumps(payload)
-                    converted = self.manager_core.sdt_adapter.from_cyclone(json_payload_str)
+                    if not validation_result.valid:
+                        LOGGER.warning(
+                            "Validation failed for payload_type=%s: %s",
+                            payload_type,
+                            validation_result.to_dict(),
+                        )
+                        return JSONResponse(content=validation_result.to_dict(), status_code=400)
 
-                elif payload_type.lower() == "oscal":
-                    LOGGER.info("Validating OSCAL payload...")
-                    if "component-definition" not in payload:
-                        raise ValueError("Invalid OSCAL payload: missing 'component-definition'")
-
-                    LOGGER.info("Converting OSCAL to Thing structure...")
-                    json_payload_str = json.dumps(payload)
-                    converted = self.manager_core.sdt_adapter.from_oscal_component(json_payload_str)
-
-                elif payload_type.lower() == "arm":
-                    LOGGER.info("Validating ARM payload...")
-                    if "$schema" not in payload:
-                        raise ValueError("Invalid ARM template: missing '$schema' field")
-
-                    LOGGER.info("Converting ARM template to Thing structure...")
-                    json_payload_str = json.dumps(payload)
-                    converted = self.manager_core.sdt_adapter.from_arm_template(json_payload_str)
-
+                    validation_payload = validation_result.to_dict()
                 else:
-                    raise ValueError(f"Unsupported payload_type: {payload_type}")
+                    # V1 fallback: keep legacy per-format behavior for backward compatibility.
+                    if payload_type.lower() == "boms":
+                        LOGGER.info("Validating CycloneDX payload...")
+                        if not self.manager_core.sdt_adapter.validate_cyclonedx_smart(
+                            payload, strict=False, thorough=False
+                        ):
+                            raise ValueError("Invalid CycloneDX payload")
+
+                        LOGGER.info("Converting CycloneDX to Thing structure...")
+                        json_payload_str = json.dumps(payload)
+                        converted = self.manager_core.sdt_adapter.from_cyclone(json_payload_str)
+
+                    elif payload_type.lower() == "oscal":
+                        LOGGER.info("Validating OSCAL payload...")
+                        if "component-definition" not in payload:
+                            raise ValueError("Invalid OSCAL payload: missing 'component-definition'")
+
+                        LOGGER.info("Converting OSCAL to Thing structure...")
+                        json_payload_str = json.dumps(payload)
+                        converted = self.manager_core.sdt_adapter.from_oscal_component(json_payload_str)
+
+                    elif payload_type.lower() == "arm":
+                        LOGGER.info("Validating ARM payload...")
+                        if "$schema" not in payload:
+                            raise ValueError("Invalid ARM template: missing '$schema' field")
+
+                        LOGGER.info("Converting ARM template to Thing structure...")
+                        json_payload_str = json.dumps(payload)
+                        converted = self.manager_core.sdt_adapter.from_arm_template(json_payload_str)
+
+                    else:
+                        raise ValueError(f"Unsupported payload_type: {payload_type}")
 
                 conversion_time = time.time() - start_time
 
@@ -958,6 +979,8 @@ class SDT_Manager_Interface:
                 return JSONResponse(content={
                     "message": f"{payload_type} payload processed and sent to SDT",
                     "payload_type": payload_type,
+                    "validation": validation_payload,
+                    "conversion_time": conversion_time,
                 })
 
             except Exception as e:

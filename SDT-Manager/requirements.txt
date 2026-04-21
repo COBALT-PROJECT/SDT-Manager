@@ -7,3 +7,4 @@ python-dotenv
 cyclonedx-python-lib
 cyclonedx-python-lib[validation]
 gitpython
+jsonschema
