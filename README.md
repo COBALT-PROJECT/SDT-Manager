@@ -166,6 +166,51 @@ Get Status:
 Send data payload to the SDT Manager (for it to be relayed to the SDT)
   - Select the API call of type POST with the API endpoint '/api/SDT/create' 
 
+Send an SBOM payload through the SDT Manager adaptor:
+  - The SDT Manager adaptor endpoint runs on the SDT Manager API server, usually port `8008`:
+
+```bash
+python3 post_sbom.py
+```
+
+  - The equivalent HTTP target is:
+
+```text
+http://localhost:8008/api/SDTM/adapt
+```
+
+  - Do not send the SBOM directly to `localhost:30008/api/SDTM/adapt`. Port `30008` is the SDT service/controller interface, not the SDT Manager adaptor API. The manager adaptor validates and transforms the SBOM, then forwards the transformed payload to the SDT service `/api/SDT/create/` endpoint.
+
+CCMLedger SBOM forwarding:
+  - The SDT Manager can mirror the transformed SBOM payload to CCMLedger as a best-effort side effect.
+  - CCMLedger exposes its API documentation at:
+
+```text
+http://cobalt-dlt.cobalt.local:3000/api-docs/
+```
+
+  - The documented SBOM endpoint is:
+
+```text
+POST /v1/manufacturer/sbom
+```
+
+  - CCMLedger documents this endpoint with `bearerAuth`, so a request without an `Authorization: Bearer <token>` header may be rejected with:
+
+```json
+{"message":"Unauthorized: Missing header"}
+```
+
+  - The documented request body shape is:
+
+```json
+{
+  "content": "<JSON-encoded SBOM content>"
+}
+```
+
+  - If CCMLedger forwarding is not needed during local testing, set `CCMLEDGER_ENABLED=false` in `SDT-Manager/.env` before starting `main.py`.
+
 Termination:
   - Select the API call of type POST with API endpoint '/delete'
   NOTE: use the identifier of the pod as an input parameter to terminate the SDT pod.

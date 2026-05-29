@@ -1,0 +1,38 @@
+module umu-mspl-list {
+  yang-version 1.1;
+  namespace "urn:umu:params:xml:ns:yang:umu-mspl-list";
+  prefix umu-mspl-list;
+
+  import ietf-mud {
+    prefix mud;
+  }
+
+  revision 2026-04-27 {
+    description
+      "Test extension module for MUD+MSPL payload validation in adapter_all_v2 test files.";
+  }
+
+  container mspls {
+    list mspl {
+      key "name";
+      leaf name {
+        type string;
+      }
+      leaf type {
+        type string;
+      }
+      anydata configuration;
+    }
+  }
+
+  augment "/mud:mud/mud:from-device-policy" {
+    container mspl-list {
+      list mspls {
+        key "name";
+        leaf name {
+          type string;
+        }
+      }
+    }
+  }
+}

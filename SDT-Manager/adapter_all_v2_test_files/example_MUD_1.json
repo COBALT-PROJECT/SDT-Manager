@@ -1,0 +1,163 @@
+{
+  "ietf-mud:mud": {
+    "mud-version": 1,
+    "cache-validity": 48,
+    "is-supported": true,
+    "last-update": "2025-12-10T15:24:29.205Z",
+    "mud-url": "https://drive.google.com/uc?export=download&id=1WhyIdgJzQchZLwDGHkfGtCKhwf6cULaW",
+    "mud-signature": "https://example.com/mud/home-assistant-green.p7s",
+    "mfg-name": "Nabu Casa",
+    "documentation": "https://www.home-assistant.io/green/",
+    "systeminfo": "Home Assistant Green smart home controller",
+    "ietf-access-control-list:acls": {
+      "acl": [
+        {
+          "name": "toipv4-acl52076",
+          "type": "ipv4-acl-type",
+          "aces": {
+            "ace": [
+              {
+                "name": "toace60204",
+                "matches": {
+                  "ietf-mud:mud": {
+                    "my-controller": [
+                      null
+                    ]
+                  }
+                },
+                "actions": {
+                  "forwarding": "accept"
+                }
+              },
+              {
+                "name": "toace44539",
+                "matches": {
+                  "ietf-mud:mud": {
+                    "local-networks": [
+                      null
+                    ]
+                  },
+                  "ipv4": {
+                    "protocol": 6
+                  }
+                },
+                "actions": {
+                  "forwarding": "accept"
+                }
+              },
+              {
+                "name": "toace2553",
+                "matches": {
+                  "ietf-mud:mud": {
+                    "same-manufacturer": [
+                      null
+                    ]
+                  }
+                },
+                "actions": {
+                  "forwarding": "accept"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "fripv4-acl52076",
+          "type": "ipv4-acl-type",
+          "aces": {
+            "ace": [
+              {
+                "name": "frace60204",
+                "matches": {
+                  "ietf-mud:mud": {
+                    "my-controller": [
+                      null
+                    ]
+                  }
+                },
+                "actions": {
+                  "forwarding": "accept"
+                }
+              },
+              {
+                "name": "frace44539",
+                "matches": {
+                  "ietf-mud:mud": {
+                    "local-networks": [
+                      null
+                    ]
+                  },
+                  "ipv4": {
+                    "protocol": 6
+                  }
+                },
+                "actions": {
+                  "forwarding": "accept"
+                }
+              },
+              {
+                "name": "frace2553",
+                "matches": {
+                  "ietf-mud:mud": {
+                    "same-manufacturer": [
+                      null
+                    ]
+                  }
+                },
+                "actions": {
+                  "forwarding": "accept"
+                }
+              }
+            ]
+          }
+        },
+				{
+					"name": "from-device-rv",
+					"type": "ipv4-acl-type",
+					"aces": {
+						"ace": [
+							{
+								"name": "allow-rv-https",
+								"matches": {
+									"ipv4": {
+										"protocol": 6
+									},
+									"tcp": {
+										"destination-port": {
+											"operator": "eq",
+											"port": 8080
+										}
+									}
+								},
+								"actions": {
+									"forwarding": "accept"
+								}
+							}
+						]
+					}
+				}
+      ]
+    },
+    "from-device-policy": {
+      "access-lists": {
+        "access-list": [
+					{
+            "name": "fripv4-acl52076"
+          },
+					{
+						"name": "from-device-rv"
+					}
+        ]
+      }
+    },
+    "to-device-policy": {
+      "access-lists": {
+        "access-list": [
+          {
+            "name": "toipv4-acl52076"
+          }
+        ]
+      }
+    }
+  }
+}

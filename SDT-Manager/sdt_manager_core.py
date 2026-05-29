@@ -8,7 +8,6 @@ from watchtower_manager import WatchTower_LifeCycleManager
 from sdt_manager_interface import SDT_Manager_Interface
 from sdt_credential_store import SDTCredentialStore
 from sdt_authentication_manager import SDTAuthenticationManager
-from adapter_all import DTModelAdapter
 from adapter_all_v2 import DTModelAdapterV2
 
 # Configure logging

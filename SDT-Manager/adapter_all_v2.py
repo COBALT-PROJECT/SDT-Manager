@@ -1,14 +1,72 @@
 import json
 import logging
+import os
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from adapter_all import DTModelAdapter
+import requests
+from cyclonedx.schema import SchemaVersion
+from cyclonedx.validation.json import JsonStrictValidator, JsonValidator
 
 try:
     from jsonschema import Draft202012Validator
 except Exception:  # pragma: no cover - optional dependency fallback
     Draft202012Validator = None
+
+
+SDT_INTERFACE_HOST = os.environ.get("SDT_INTERFACE_HOST", "localhost")
+SDT_INTERFACE_PORT = os.environ.get("SDT_INTERFACE_PORT", "30008")
+
+CCMLEDGER_HOST = os.environ.get("CCMLEDGER_HOST", "cobalt-dlt.cobalt.local")
+CCMLEDGER_PORT = os.environ.get("CCMLEDGER_PORT", "3000")
+CCMLEDGER_SBOM_PATH = os.environ.get("CCMLEDGER_SBOM_PATH", "/v1/manufacturer/sbom")
+CCMLEDGER_ENABLED = os.environ.get("CCMLEDGER_ENABLED", "true").lower() in ("1", "true", "yes")
+CCMLEDGER_BEARER_TOKEN = os.environ.get("CCMLEDGER_BEARER_TOKEN")
+
+
+def _forward_to_ccmledger(payload, params=None):
+    """Mirror the outbound SDT payload to CCMLedger as a best-effort side effect."""
+    logger = logging.getLogger(__name__)
+    if not CCMLEDGER_ENABLED:
+        return None
+
+    url = f"http://{CCMLEDGER_HOST}:{CCMLEDGER_PORT}{CCMLEDGER_SBOM_PATH}"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Correlation-Id": str(int(time.time() * 1000)),
+        "X-Forwarded-From": "sdt-manager",
+    }
+    if CCMLEDGER_BEARER_TOKEN:
+        headers["Authorization"] = f"Bearer {CCMLEDGER_BEARER_TOKEN}"
+    else:
+        logger.warning("CCMLedger bearer token is not configured; forwarding may be rejected")
+
+    ledger_payload = {"content": json.dumps(payload)}
+
+    try:
+        logger.info("Forwarding payload to CCMLedger at %s", url)
+        response = requests.post(
+            url,
+            data=json.dumps(ledger_payload),
+            params=params or {},
+            headers=headers,
+            timeout=30,
+        )
+        if response.status_code >= 400:
+            logger.error(
+                "CCMLedger forwarding failed: status=%s body=%s",
+                response.status_code,
+                response.text[:500],
+            )
+        else:
+            logger.info("CCMLedger forwarding succeeded: status=%s", response.status_code)
+        return response
+    except requests.exceptions.RequestException as exc:
+        logger.error("CCMLedger forwarding error: %s", exc)
+    except Exception as exc:
+        logger.error("Unexpected CCMLedger forwarding error: %s", exc)
+    return None
 
 
 @dataclass
@@ -32,8 +90,8 @@ class ValidationResult:
             "format": self.fmt,
             "schema_version": self.schema_version,
             "errors": [
-                {"path": i.path, "message": i.message, "rule": i.rule}
-                for i in self.errors
+                {"path": issue.path, "message": issue.message, "rule": issue.rule}
+                for issue in self.errors
             ],
             "warnings": self.warnings,
         }
@@ -47,16 +105,11 @@ class FormatSpec:
     schema_version: str
 
 
-class DTModelAdapterV2(DTModelAdapter):
-    """
-    V2 adapter with unified validation and transform dispatch for all payload formats.
-
-    This class is backward-compatible with existing adapter usage because it extends
-    DTModelAdapter and preserves inherited methods.
-    """
+class DTModelAdapterV2:
+    """Standalone v2 adapter with unified validation, transforms, and controller dispatch."""
 
     def __init__(self):
-        super().__init__()
+        print("SDT Manager-Adapter instance created.")
         self.logger = logging.getLogger(__name__)
         self._schema_cache: Dict[str, Dict[str, Any]] = {}
         self._format_registry = self._build_format_registry()
@@ -143,6 +196,50 @@ class DTModelAdapterV2(DTModelAdapter):
             )
         return spec.transformer(payload)
 
+    def send_to_controller(self, payload, toeid="123456789", payload_type="BOMS"):
+        """Send the transformed Thing payload to the SDT interface and mirror it to CCMLedger."""
+        logger = logging.getLogger(__name__)
+        url = f"http://{SDT_INTERFACE_HOST}:{SDT_INTERFACE_PORT}/api/SDT/create/"
+        params = {"toe_id": toeid, "category": payload_type, "appmap": "true"}
+
+        if not isinstance(payload, dict):
+            logger.error("Invalid payload type: expected dict, got %s", type(payload).__name__)
+            return None
+
+        logger.info("Forwarding payload to CCMLedger with params %s", params)
+        _forward_to_ccmledger(payload, params=params)
+
+        try:
+            logger.info("Sending request to %s with params %s", url, params)
+            response = requests.post(
+                url,
+                data=json.dumps(payload),
+                params=params,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-AppMap-Recording": "true",
+                    "X-Correlation-Id": str(int(time.time() * 1000)),
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            logger.info("Request successful with status code %s", response.status_code)
+            return response
+        except requests.exceptions.HTTPError as exc:
+            logger.error("HTTP error occurred: %s, status code: %s", exc, exc.response.status_code)
+            return exc.response
+        except requests.exceptions.ConnectionError as exc:
+            logger.error("Connection error occurred: %s", exc)
+        except requests.exceptions.Timeout as exc:
+            logger.error("Request timed out: %s", exc)
+        except requests.exceptions.RequestException as exc:
+            logger.error("Request error occurred: %s", exc)
+        except json.JSONDecodeError as exc:
+            logger.error("JSON encoding error: %s", exc)
+        except Exception as exc:
+            logger.error("Unexpected error sending to controller: %s", exc)
+        return None
+
     def validate_and_transform(
         self,
         payload: Any,
@@ -154,6 +251,55 @@ class DTModelAdapterV2(DTModelAdapter):
         if not result.valid:
             return result, None
         return result, self.transform_payload(payload, payload_type)
+
+    def validate_cyclonedx_smart(self, payload, strict=False, thorough=True):
+        """Validate CycloneDX by required-field checks first, then schema validation when requested."""
+        logger = logging.getLogger(__name__)
+
+        try:
+            if isinstance(payload, str):
+                try:
+                    content = json.loads(payload)
+                    json_data = payload
+                except json.JSONDecodeError:
+                    logger.info("Invalid JSON format in the payload.")
+                    return False
+            else:
+                content = payload
+                json_data = json.dumps(payload)
+
+            if "bomFormat" not in content or "specVersion" not in content or "serialNumber" not in content:
+                logger.info("Missing required fields: bomFormat, specVersion, or serialNumber")
+                return False
+
+            spec_version = content.get("specVersion", "1.4")
+            schema_version_map = {
+                "1.0": SchemaVersion.V1_0,
+                "1.1": SchemaVersion.V1_1,
+                "1.2": SchemaVersion.V1_2,
+                "1.3": SchemaVersion.V1_3,
+                "1.4": SchemaVersion.V1_4,
+                "1.5": SchemaVersion.V1_5,
+                "1.6": SchemaVersion.V1_6,
+            }
+            schema_version = schema_version_map.get(spec_version, SchemaVersion.V1_4)
+
+            if not thorough:
+                logger.info("Basic validation passed. Detected schema version: %s", spec_version)
+                return True
+
+            validator = JsonStrictValidator(schema_version=schema_version) if strict else JsonValidator(schema_version=schema_version)
+            validation_errors = validator.validate_str(json_data)
+
+            if not validation_errors:
+                logger.info("Validation passed. Schema version: %s", spec_version)
+                return True
+
+            logger.info("Validation failed with errors: %s", validation_errors)
+            return False
+        except Exception as exc:
+            logger.info("An error occurred: %s", exc)
+            return False
 
     def _validate_cyclonedx(self, payload: Any, strict: bool = True, thorough: bool = True) -> ValidationResult:
         content = self._coerce_payload_to_dict(payload)
@@ -298,8 +444,291 @@ class DTModelAdapterV2(DTModelAdapter):
     def _transform_mud(self, payload: Any) -> Dict[str, Any]:
         return self.from_mud_profile(self._coerce_payload_to_json(payload))
 
+    def from_oscal_component(self, oscal_json, thing_id=None):
+        logger = logging.getLogger(__name__)
+        logger.info("Starting transformation of OSCAL Component Definition")
+
+        oscal_content = json.loads(oscal_json)
+        component_definition = oscal_content.get("component-definition", {})
+        metadata = component_definition.get("metadata", {})
+
+        attributes = {}
+        for key in component_definition:
+            if key not in ["metadata", "components", "capabilities", "back-matter"]:
+                attributes[key] = component_definition[key]
+
+        attributes["sourceType"] = "oscal-component"
+        attributes["source"] = "CCM"
+        if thing_id:
+            attributes["thingId"] = thing_id
+
+        features = {}
+        if metadata:
+            features["metadata"] = {"properties": metadata}
+
+        components = component_definition.get("components", [])
+        if components:
+            component_properties = {}
+            for idx, component in enumerate(components, 1):
+                component_properties[str(idx)] = component
+            features["components"] = {"properties": component_properties}
+
+        capabilities = component_definition.get("capabilities", [])
+        if capabilities:
+            capability_properties = {}
+            for idx, capability in enumerate(capabilities, 1):
+                capability_properties[str(idx)] = capability
+            features["capabilities"] = {"properties": capability_properties}
+
+        back_matter = component_definition.get("back-matter", {})
+        if back_matter:
+            features["back_matter"] = {"properties": back_matter}
+
+        transformed_oscal = {
+            "attributes": attributes,
+            "features": features,
+            "_metadata": oscal_content,
+            "_relationships": self._extract_oscal_relationships(component_definition),
+        }
+
+        logger.info("Successfully transformed OSCAL component definition")
+        return transformed_oscal
+
+    def from_arm_template(self, arm_json, thing_id=None):
+        logger = logging.getLogger(__name__)
+        logger.info("Starting transformation of ARM Template")
+
+        arm_content = json.loads(arm_json)
+
+        attributes = {}
+        for key in arm_content:
+            if key not in ["metadata", "parameters", "variables", "resources", "outputs"]:
+                attributes[key] = arm_content[key]
+
+        attributes["sourceType"] = "arm-template"
+        attributes["source"] = "CCM"
+        if thing_id:
+            attributes["thingId"] = thing_id
+
+        features = {}
+
+        parameters = arm_content.get("parameters", {})
+        if parameters:
+            features["parameters"] = {"properties": parameters}
+
+        variables = arm_content.get("variables", {})
+        if variables:
+            features["variables"] = {"properties": variables}
+
+        resources = arm_content.get("resources", [])
+        if resources:
+            resource_properties = {}
+            for idx, resource in enumerate(resources, 1):
+                resource_properties[str(idx)] = resource
+            features["resources"] = {"properties": resource_properties}
+
+        outputs = arm_content.get("outputs", {})
+        if outputs:
+            features["outputs"] = {"properties": outputs}
+
+        transformed_arm = {
+            "attributes": attributes,
+            "features": features,
+            "_metadata": arm_content,
+            "_relationships": self._extract_arm_relationships(arm_content),
+        }
+
+        logger.info("Successfully transformed ARM template")
+        return transformed_arm
+
+    def from_cyclone(self, cyclone_json, thing_id=None):
+        from datetime import datetime
+
+        logger = logging.getLogger(__name__)
+        logger.info("Starting transformation of CycloneDX payload")
+
+        cyclone_content = json.loads(cyclone_json)
+        metadata = cyclone_content.get("metadata", {})
+
+        attributes = {}
+        for key in cyclone_content:
+            if key not in [
+                "metadata",
+                "components",
+                "services",
+                "dependencies",
+                "compositions",
+                "vulnerabilities",
+                "formulations",
+                "annotations",
+                "definitions",
+                "declarations",
+                "extensions",
+            ]:
+                attributes[key] = cyclone_content[key]
+
+        attributes["sourceType"] = "cyclonedx"
+        attributes["source"] = "CCM"
+        attributes["transformedAt"] = datetime.utcnow().isoformat() + "Z"
+        attributes["bomType"] = self.detect_bom_type(cyclone_content)
+        if thing_id:
+            attributes["thingId"] = thing_id
+
+        if metadata.get("component"):
+            attributes["componentName"] = metadata["component"].get("name")
+            attributes["componentVersion"] = metadata["component"].get("version")
+
+        features = {}
+        sections_to_process = [
+            "metadata",
+            "components",
+            "services",
+            "dependencies",
+            "compositions",
+            "vulnerabilities",
+            "formulations",
+            "annotations",
+            "definitions",
+            "declarations",
+            "extensions",
+        ]
+
+        for section in sections_to_process:
+            section_data = cyclone_content.get(section)
+            if section_data:
+                if isinstance(section_data, list):
+                    section_properties = {}
+                    for idx, item in enumerate(section_data, 1):
+                        item_id = self._extract_item_id(item, section, idx)
+                        section_properties[item_id] = item
+                    features[section] = {"properties": section_properties}
+                    item_count = len(section_properties)
+                else:
+                    features[section] = {"properties": section_data}
+                    item_count = 1
+
+                logger.info("Processed %s: %s items", section, item_count)
+
+        transformed_cyclone = {
+            "attributes": attributes,
+            "features": features,
+            "_metadata": cyclone_content,
+            "_relationships": self._extract_cyclonedx_relationships(cyclone_content),
+            "_schema": {
+                "version": "1.0",
+                "source": "cyclonedx",
+                "specVersion": cyclone_content.get("specVersion", "1.6"),
+            },
+        }
+
+        logger.info("Successfully transformed CycloneDX payload to Thing")
+        return transformed_cyclone
+
+    def _extract_item_id(self, item, section, fallback_idx):
+        if section == "components":
+            return item.get("bom-ref") or item.get("purl") or f"{item.get('name', 'component')}-{fallback_idx}"
+        if section == "vulnerabilities":
+            return item.get("id", f"vuln-{fallback_idx}")
+        if section == "services":
+            return item.get("bom-ref") or item.get("name") or f"service-{fallback_idx}"
+        if section == "dependencies":
+            return item.get("ref", f"dep-{fallback_idx}")
+        return f"{section}-{fallback_idx}"
+
+    def _extract_cyclonedx_relationships(self, cyclone_content):
+        relationships = []
+
+        dependencies = cyclone_content.get("dependencies", [])
+        for dependency in dependencies:
+            ref = dependency.get("ref")
+            depends_on = dependency.get("dependsOn", [])
+
+            for dep in depends_on:
+                relationships.append(
+                    {
+                        "source": ref,
+                        "target": dep,
+                        "type": "depends_on",
+                        "relationship": "component-dependency",
+                    }
+                )
+
+        vulnerabilities = cyclone_content.get("vulnerabilities", [])
+        for vuln in vulnerabilities:
+            vuln_id = vuln.get("id")
+            affects = vuln.get("affects", [])
+
+            for affect in affects:
+                ref = affect.get("ref")
+                if ref and vuln_id:
+                    relationships.append(
+                        {
+                            "source": ref,
+                            "target": vuln_id,
+                            "type": "has_vulnerability",
+                            "relationship": "component-vulnerability",
+                        }
+                    )
+
+        services = cyclone_content.get("services", [])
+        for service in services:
+            service_ref = service.get("bom-ref")
+            service_dependencies = service.get("dependencies", [])
+
+            for dep in service_dependencies:
+                if service_ref:
+                    relationships.append(
+                        {
+                            "source": service_ref,
+                            "target": dep,
+                            "type": "depends_on",
+                            "relationship": "service-dependency",
+                        }
+                    )
+
+        return relationships
+
+    def _extract_oscal_relationships(self, component_definition):
+        relationships = []
+
+        components = component_definition.get("components", [])
+        for component in components:
+            component_uuid = component.get("uuid")
+            control_implementations = component.get("control-implementations", [])
+            for implementation in control_implementations:
+                source_uuid = implementation.get("source")
+                if source_uuid:
+                    relationships.append(
+                        {
+                            "source": component_uuid,
+                            "target": source_uuid,
+                            "type": "implements",
+                            "relationship": "control-implementation",
+                        }
+                    )
+
+        return relationships
+
+    def _extract_arm_relationships(self, arm_content):
+        relationships = []
+
+        resources = arm_content.get("resources", [])
+        for resource in resources:
+            resource_name = resource.get("name")
+            depends_on = resource.get("dependsOn", [])
+            for dependency in depends_on:
+                relationships.append(
+                    {
+                        "source": resource_name,
+                        "target": dependency,
+                        "type": "depends_on",
+                        "relationship": "resource-dependency",
+                    }
+                )
+
+        return relationships
+
     def from_mud_profile(self, mud_json: str, thing_id: Optional[str] = None) -> Dict[str, Any]:
-        """Transform an RFC8520 MUD profile into Thing-like structure."""
         content = json.loads(mud_json)
         mud = content.get("ietf-mud:mud", {})
 
@@ -366,10 +795,6 @@ class DTModelAdapterV2(DTModelAdapter):
         return relationships
 
     def process_multiple_files(self, file_configs: List[Dict[str, Any]]):
-        """
-        V2 batch processing with per-file validation.
-        Returns the same things dictionary shape used by existing routes.
-        """
         logger = logging.getLogger(__name__)
         things = {}
 
@@ -379,17 +804,13 @@ class DTModelAdapterV2(DTModelAdapter):
             thing_id = config.get("thing_id")
 
             try:
-                with open(file_path, "r") as f:
-                    raw = f.read()
+                with open(file_path, "r") as file_handle:
+                    raw = file_handle.read()
 
                 payload = json.loads(raw)
                 validation = self.validate_payload(payload, file_type, strict=True, thorough=True)
                 if not validation.valid:
-                    logger.error(
-                        "Validation failed for %s: %s",
-                        file_path,
-                        validation.to_dict(),
-                    )
+                    logger.error("Validation failed for %s: %s", file_path, validation.to_dict())
                     continue
 
                 transformed = self.transform_payload(payload, file_type)
@@ -397,12 +818,55 @@ class DTModelAdapterV2(DTModelAdapter):
                     transformed.setdefault("attributes", {})["thingId"] = thing_id
                 things[file_path] = transformed
                 logger.info("Processed %s as %s", file_path, file_type)
-
-            except Exception as e:
-                logger.error("Failed to process %s: %s", file_path, str(e))
+            except Exception as exc:
+                logger.error("Failed to process %s: %s", file_path, exc)
 
         self._add_cross_references(things)
         return things
+
+    def _add_cross_references(self, things):
+        logger = logging.getLogger(__name__)
+
+        cyclonedx_things = {key: value for key, value in things.items() if value["attributes"].get("sourceType") == "cyclonedx"}
+        for thing_id, thing in things.items():
+            cross_refs = []
+
+            if thing["attributes"].get("sourceType") == "oscal-component":
+                for cyclone_id in cyclonedx_things.keys():
+                    cross_refs.append(
+                        {"target": cyclone_id, "relationship": "governs", "type": "compliance"}
+                    )
+
+            if thing["attributes"].get("sourceType") == "arm-template":
+                for cyclone_id in cyclonedx_things.keys():
+                    cross_refs.append(
+                        {"target": cyclone_id, "relationship": "deploys", "type": "deployment"}
+                    )
+
+            if cross_refs:
+                thing["_cross_references"] = cross_refs
+                logger.info("Added %s cross-references to %s", len(cross_refs), thing_id)
+
+    def detect_bom_type(self, cyclone_content):
+        if "components" in cyclone_content:
+            components = cyclone_content.get("components", [])
+            for component in components:
+                if component.get("type") == "cryptographic-asset":
+                    if component.get("cryptoProperties", {}).get("assetType") == "algorithm":
+                        name = "cbom.algorithm"
+                        return name + ".dependencies" if "dependencies" in cyclone_content else name
+                    if component.get("cryptoProperties", {}).get("assetType") == "certificate":
+                        name = "cbom.certificate"
+                        return name + ".dependencies" if "dependencies" in cyclone_content else name
+                elif component.get("type") == "library":
+                    return "sbom"
+                elif component.get("type") == "device":
+                    return "hbom"
+        elif "dependencies" in cyclone_content and "services" in cyclone_content:
+            return "saasbom"
+        elif "vulnerabilities" in cyclone_content:
+            return "vex"
+        return "boms"
 
     def _coerce_payload_to_dict(self, payload: Any) -> Optional[Dict[str, Any]]:
         if isinstance(payload, dict):
@@ -427,8 +891,8 @@ class DTModelAdapterV2(DTModelAdapter):
             return issues
 
         validator = Draft202012Validator(schema)
-        for err in sorted(validator.iter_errors(payload), key=lambda e: list(e.path)):
-            path = "$." + ".".join([str(p) for p in err.path]) if err.path else "$"
+        for err in sorted(validator.iter_errors(payload), key=lambda error: list(error.path)):
+            path = "$." + ".".join([str(part) for part in err.path]) if err.path else "$"
             issues.append(
                 ValidationIssue(
                     path=path,

@@ -1,0 +1,106 @@
+{
+  "attributes": {
+    "sourceType": "mud",
+    "source": "CCM",
+    "mudUrl": "https://iot_controller/iot_broker",
+    "mudVersion": 1,
+    "lastUpdate": "2019-04-17T09:47:00+00:00"
+  },
+  "features": {
+    "mud": {
+      "properties": {
+        "mud-version": 1,
+        "mud-url": "https://iot_controller/iot_broker",
+        "last-update": "2019-04-17T09:47:00+00:00",
+        "cache-validity": 48,
+        "is-supported": true,
+        "systeminfo": "Wismote IoT device",
+        "mfg-name": "Odins",
+        "documentation": "http://doc.wismote.odins.com",
+        "model-name": "iot_broker",
+        "from-device-policy": {
+          "accessListCount": 1,
+          "accessListNames": [
+            "mud-55052-v6fr"
+          ],
+          "msplCount": 1,
+          "msplNames": [
+            "mud-55054-v6fr"
+          ]
+        },
+        "to-device-policy": {
+          "accessListCount": 1,
+          "accessListNames": [
+            "mud-55052-v6to"
+          ]
+        }
+      }
+    },
+    "acls": {
+      "properties": {
+        "acl": [
+          {
+            "name": "mud-55052-v6to",
+            "type": "ipv6-acl-type",
+            "aces": {
+              "ace": [
+                {
+                  "name": "ent0-todev",
+                  "matches": {
+                    "ietf-mud:mud": {
+                      "my-controller": [
+                        null
+                      ]
+                    },
+                    "ipv6": {
+                      "protocol": 17
+                    },
+                    "udp": {
+                      "source-port": {
+                        "operator": "eq",
+                        "port": 5683
+                      }
+                    }
+                  },
+                  "actions": {
+                    "forwarding": "accept"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "mud-55052-v6fr",
+            "type": "ipv6-acl-type",
+            "aces": {
+              "ace": [
+                {
+                  "name": "ent0-frdev",
+                  "matches": {
+                    "ietf-mud:mud": {
+                      "same-manufacturer": [
+                        null
+                      ]
+                    },
+                    "ipv6": {
+                      "protocol": 17
+                    },
+                    "udp": {
+                      "destination-port": {
+                        "operator": "eq",
+                        "port": 5683
+                      }
+                    }
+                  },
+                  "actions": {
+                    "forwarding": "accept"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

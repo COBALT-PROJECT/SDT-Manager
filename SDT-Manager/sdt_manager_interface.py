@@ -1,18 +1,15 @@
 # File: sdt_manager_interface.py
 
-from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Dict, Optional, List
+from typing import List, Optional
 import uvicorn
 import logging
 import json
 import time
 import threading
 import os
-
-from fastapi import Request, FastAPI, UploadFile, File, HTTPException, Query
-from fastapi.responses import JSONResponse
 
 LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +40,7 @@ class DeletionRequest(BaseModel):
 class FileConfig(BaseModel):
     path: str
     type: str
+    thing_id: Optional[str] = None
 
 class MultipleFilesRequest(BaseModel):
     file_configs: List[FileConfig]
@@ -63,6 +61,21 @@ class SDT_Manager_Interface:
         )
         self._setup_routes()
         LOGGER.info("SDT Manager Interface initialized")
+
+    def _get_v2_adapter(self):
+        """Return the configured adapter and fail fast if a v1-only adapter is wired in."""
+        adapter = self.manager_core.sdt_adapter
+        missing = [
+            method_name
+            for method_name in ("validate_and_transform", "validate_payload")
+            if not hasattr(adapter, method_name)
+        ]
+        if missing:
+            raise RuntimeError(
+                "SDT Manager requires DTModelAdapterV2; missing methods: "
+                + ", ".join(missing)
+            )
+        return adapter
     
     def _run_auth_flow_async(self, sdt_identifier: str, ids_connector_id: Optional[str],
                               watchtower_id: Optional[str]):
@@ -149,10 +162,12 @@ class SDT_Manager_Interface:
         sdt_service_name = self._get_sdt_service_name()
         sdt_port = int(os.environ.get("SDT_AUTH_PORT", "8080"))
         if sdt_service_name:
-            self._send_token_to_service(
+            sdt_token_sent = self._send_token_to_service(
                 sdt_service_name, sdt_port, auth_payload, "SDT",
                 endpoint="/api/SDT/auth/token"
             )
+            if sdt_token_sent:
+                self._send_template_to_sdt(sdt_service_name, sdt_port)
         else:
             LOGGER.warning("Could not resolve SDT service — skipping token delivery to SDT")
 
@@ -181,7 +196,7 @@ class SDT_Manager_Interface:
 
     def _send_token_to_service(self, service_name: str, port: int,
                                 auth_payload: dict, component_label: str,
-                                endpoint: str = "/auth/token"):
+                                endpoint: str = "/auth/token") -> bool:
         """
         POST the credentials JSON payload to a component's auth endpoint
         using its Kubernetes service ClusterIP.
@@ -192,6 +207,9 @@ class SDT_Manager_Interface:
             auth_payload:    The full credentials dict to send.
             component_label: Human-readable label for logging.
             endpoint:        HTTP path to POST to (default: /auth/token).
+
+        Returns:
+            True when the target responds with a success status.
         """
         import requests as req
 
@@ -201,7 +219,7 @@ class SDT_Manager_Interface:
                 f"Cannot resolve ClusterIP for {service_name} — "
                 f"token not delivered to {component_label}"
             )
-            return
+            return False
 
         url = f"http://{cluster_ip}:{port}{endpoint}"
         LOGGER.info(f"Sending credentials to {component_label} at {url}")
@@ -218,6 +236,7 @@ class SDT_Manager_Interface:
                     f"Credentials delivered to {component_label} ({service_name}) "
                     f"— HTTP {response.status_code}"
                 )
+                return True
             else:
                 LOGGER.error(
                     f"Token delivery to {component_label} ({service_name}) failed — "
@@ -229,6 +248,57 @@ class SDT_Manager_Interface:
             LOGGER.error(f"Timeout sending credentials to {component_label} ({url})")
         except req.exceptions.RequestException as e:
             LOGGER.error(f"Error sending credentials to {component_label} ({url}): {e}")
+        return False
+
+    def _send_template_to_sdt(self, service_name: str, port: int):
+        """Upload the manager template.json to the SDT template endpoint."""
+        import requests as req
+
+        cluster_ip = self._get_service_cluster_ip(service_name)
+        if not cluster_ip:
+            LOGGER.error(
+                f"Cannot resolve ClusterIP for {service_name} — template not delivered to SDT"
+            )
+            return False
+
+        template_path = os.environ.get(
+            "SDT_TEMPLATE_PATH",
+            os.path.join(os.path.dirname(__file__), "template.json"),
+        )
+        if not os.path.isfile(template_path):
+            LOGGER.error(f"Template file not found — cannot deliver to SDT: {template_path}")
+            return False
+
+        url = f"http://{cluster_ip}:{port}/api/SDT/upload-template"
+        LOGGER.info(f"Sending template.json to SDT at {url}")
+
+        try:
+            with open(template_path, "rb") as template_file:
+                response = req.post(
+                    url,
+                    files={
+                        "file": ("template.json", template_file, "application/json")
+                    },
+                    timeout=15,
+                )
+
+            if response.status_code in (200, 201, 204):
+                LOGGER.info(
+                    f"Template delivered to SDT ({service_name}) — HTTP {response.status_code}"
+                )
+                return True
+
+            LOGGER.error(
+                f"Template delivery to SDT ({service_name}) failed — "
+                f"HTTP {response.status_code}: {response.text[:200]}"
+            )
+        except req.exceptions.ConnectionError as e:
+            LOGGER.error(f"Connection to SDT template endpoint ({url}) failed: {e}")
+        except req.exceptions.Timeout:
+            LOGGER.error(f"Timeout sending template to SDT ({url})")
+        except req.exceptions.RequestException as e:
+            LOGGER.error(f"Error sending template to SDT ({url}): {e}")
+        return False
 
     def _get_service_cluster_ip(self, service_name: str) -> Optional[str]:
         """
@@ -900,72 +970,36 @@ class SDT_Manager_Interface:
         ):
             """
             Unified endpoint to convert different payload formats
-            (CycloneDX, OSCAL, ARM) to Thing payload_type
+            (CycloneDX, OSCAL, ARM, MUD) to Thing payload_type
             """
             try:
                 LOGGER.info(f"Receiving payload (payload_type={payload_type})...")
                 payload = await request.json()
+                adapter = self._get_v2_adapter()
 
                 start_time = time.time()
-                validation_payload = None
+                validation_result, converted = adapter.validate_and_transform(
+                    payload,
+                    payload_type,
+                    strict=True,
+                    thorough=True,
+                )
 
-                # V2 path: unified validation and transformation for all formats.
-                if hasattr(self.manager_core.sdt_adapter, "validate_and_transform"):
-                    validation_result, converted = self.manager_core.sdt_adapter.validate_and_transform(
-                        payload,
+                if not validation_result.valid:
+                    LOGGER.warning(
+                        "Validation failed for payload_type=%s: %s",
                         payload_type,
-                        strict=True,
-                        thorough=True,
+                        validation_result.to_dict(),
                     )
+                    return JSONResponse(content=validation_result.to_dict(), status_code=400)
 
-                    if not validation_result.valid:
-                        LOGGER.warning(
-                            "Validation failed for payload_type=%s: %s",
-                            payload_type,
-                            validation_result.to_dict(),
-                        )
-                        return JSONResponse(content=validation_result.to_dict(), status_code=400)
-
-                    validation_payload = validation_result.to_dict()
-                else:
-                    # V1 fallback: keep legacy per-format behavior for backward compatibility.
-                    if payload_type.lower() == "boms":
-                        LOGGER.info("Validating CycloneDX payload...")
-                        if not self.manager_core.sdt_adapter.validate_cyclonedx_smart(
-                            payload, strict=False, thorough=False
-                        ):
-                            raise ValueError("Invalid CycloneDX payload")
-
-                        LOGGER.info("Converting CycloneDX to Thing structure...")
-                        json_payload_str = json.dumps(payload)
-                        converted = self.manager_core.sdt_adapter.from_cyclone(json_payload_str)
-
-                    elif payload_type.lower() == "oscal":
-                        LOGGER.info("Validating OSCAL payload...")
-                        if "component-definition" not in payload:
-                            raise ValueError("Invalid OSCAL payload: missing 'component-definition'")
-
-                        LOGGER.info("Converting OSCAL to Thing structure...")
-                        json_payload_str = json.dumps(payload)
-                        converted = self.manager_core.sdt_adapter.from_oscal_component(json_payload_str)
-
-                    elif payload_type.lower() == "arm":
-                        LOGGER.info("Validating ARM payload...")
-                        if "$schema" not in payload:
-                            raise ValueError("Invalid ARM template: missing '$schema' field")
-
-                        LOGGER.info("Converting ARM template to Thing structure...")
-                        json_payload_str = json.dumps(payload)
-                        converted = self.manager_core.sdt_adapter.from_arm_template(json_payload_str)
-
-                    else:
-                        raise ValueError(f"Unsupported payload_type: {payload_type}")
+                validation_payload = validation_result.to_dict()
 
                 conversion_time = time.time() - start_time
 
                 LOGGER.info("Sending to controller...")
                 start_time = time.time()
-                response = self.manager_core.sdt_adapter.send_to_controller(
+                response = adapter.send_to_controller(
                     converted, toeid, payload_type
                 )
                 controller_time = time.time() - start_time
@@ -997,27 +1031,46 @@ class SDT_Manager_Interface:
             """
             try:
                 LOGGER.info(f"Processing {len(request.file_configs)} files...")
+                adapter = self._get_v2_adapter()
+                file_configs = [config.dict(exclude_none=True) for config in request.file_configs]
+                file_config_by_path = {config.path: config for config in request.file_configs}
 
                 start_time = time.time()
-                things = self.manager_core.sdt_adapter.process_multiple_files(
-                    [config.dict() for config in request.file_configs]
-                )
+                things = adapter.process_multiple_files(file_configs)
                 processing_time = time.time() - start_time
 
                 results = []
                 controller_start = time.time()
 
-                for thing_id, thing in things.items():
+                for file_path, thing in things.items():
                     try:
-                        response = self.manager_core.sdt_adapter.send_to_controller(thing)
+                        file_config = file_config_by_path.get(file_path)
+                        payload_type_value = file_config.type if file_config else "BOMS"
+                        thing_id = file_config.thing_id if file_config else None
+
+                        if thing_id:
+                            response = adapter.send_to_controller(
+                                thing,
+                                toeid=thing_id,
+                                payload_type=payload_type_value,
+                            )
+                        else:
+                            response = adapter.send_to_controller(
+                                thing,
+                                payload_type=payload_type_value,
+                            )
+
                         results.append({
                             "status": "success",
+                            "path": file_path,
+                            "payload_type": payload_type_value,
                             "source_type": thing.get("attributes", {}).get("sourceType"),
                             "response_status": response.status_code if response else None
                         })
                     except Exception as e:
                         results.append({
                             "status": "failed",
+                            "path": file_path,
                             "error": str(e)
                         })
 
@@ -1026,6 +1079,9 @@ class SDT_Manager_Interface:
                 return JSONResponse(content={
                     "message": "Multiple files processed and sent to SDT",
                     "total_files": len(things),
+                    "processing_time": processing_time,
+                    "controller_time": controller_time,
+                    "results": results,
                 })
 
             except Exception as e:
@@ -1071,21 +1127,25 @@ class SDT_Manager_Interface:
             """Endpoint to validate a CycloneDX payload without conversion."""
             try:
                 payload = await request.json()
+                adapter = self._get_v2_adapter()
 
                 start_time = time.time()
-                is_valid = self.manager_core.sdt_adapter.validate_cyclonedx_smart(
-                    payload, strict=strict, thorough=thorough
+                validation_result = adapter.validate_payload(
+                    payload,
+                    "cyclonedx",
+                    strict=strict,
+                    thorough=thorough,
                 )
                 validation_time = time.time() - start_time
 
                 result = {
-                    "valid": is_valid,
+                    **validation_result.to_dict(),
                     "validation_time": validation_time,
                     "strict_mode": strict,
                     "thorough_check": thorough
                 }
 
-                if is_valid:
+                if validation_result.valid and isinstance(payload, dict):
                     result["bom_format"] = payload.get("bomFormat")
                     result["spec_version"] = payload.get("specVersion")
                     result["serial_number"] = payload.get("serialNumber")

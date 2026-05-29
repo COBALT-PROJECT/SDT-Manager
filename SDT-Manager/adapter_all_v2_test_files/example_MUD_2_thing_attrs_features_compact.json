@@ -1,0 +1,55 @@
+{
+  "attributes": {
+    "sourceType": "mud",
+    "source": "CCM",
+    "mudUrl": "https://ha.nabu.com/hagreen.json",
+    "mudVersion": 1,
+    "lastUpdate": "2026-04-16T11:11:04.535Z"
+  },
+  "features": {
+    "mud": {
+      "properties": {
+        "mud-version": 1,
+        "cache-validity": 48,
+        "is-supported": true,
+        "last-update": "2026-04-16T11:11:04.535Z",
+        "mud-url": "https://ha.nabu.com/hagreen.json",
+        "mud-signature": "https://ha.nabu.com/hagreen.p7s",
+        "mfg-name": "nabu",
+        "documentation": "https://documentation.com",
+        "systeminfo": "This device is a controller for smart home devices",
+        "ietf-access-control-list:acls": {
+          "aclCount": 2,
+          "aclNames": [
+            "toipv4-acl59220",
+            "fripv4-acl59220"
+          ],
+          "acls": [
+            {
+              "name": "toipv4-acl59220",
+              "type": "ipv4-acl-type",
+              "aceCount": 4
+            },
+            {
+              "name": "fripv4-acl59220",
+              "type": "ipv4-acl-type",
+              "aceCount": 4
+            }
+          ]
+        },
+        "from-device-policy": {
+          "accessListCount": 1,
+          "accessListNames": [
+            "fripv4-acl59220"
+          ]
+        },
+        "to-device-policy": {
+          "accessListCount": 1,
+          "accessListNames": [
+            "toipv4-acl59220"
+          ]
+        }
+      }
+    }
+  }
+}

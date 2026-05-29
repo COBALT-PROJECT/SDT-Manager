@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+*.db
+VALIDATION_REPORT.md
+*.txt
+*.log

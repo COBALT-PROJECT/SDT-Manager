@@ -1,0 +1,66 @@
+{
+  "config_name": "AI usecase",
+  "config_version": "3.0",
+
+  "evidence_collectors": [
+    {
+      "collector_id": "aishield-watchtower",
+      "enabled": true,
+      "categories": ["AI"],
+
+      "mqtt": {
+        "topics": [
+          "ditto-cobalt/+/+/things/twin/events/created",
+          "ditto-cobalt/+/+/things/twin/events/modified"
+        ],
+        "filters": {
+          "sourceType": ["Repository"]
+        }
+      },
+
+      "endpoint": "http://localhost:",
+
+      "evidence": {
+        "type": "zip",
+        "include": ["*.py", "*.h5", "*.ipynb", "*.txt", "*.csv"],
+        "exclude": [".git/*", "__pycache__/*", "*.pyc", "node_modules/*"]
+      }
+    },
+
+    {
+      "collector_id": "aishield-spectra",
+      "enabled": true,
+      "categories": ["AI"],
+
+      "mqtt": {
+        "filters": {
+          "file_extensions": [".csv", ".pkl", ".h5"]
+        }
+      },
+
+      "endpoint": "http://localhost:",
+      "auth": {
+        "type": "bearer",
+        "token_env": "SPECTRA_TOKEN"
+      },
+
+      "evidence": {
+        "type": "files",
+        "files": ["dataset.csv", "model.pkl", "model.h5"]
+      },
+
+      "transform": {
+        "toe_id": "${toe_id}",
+        "project": "${repo_name}",
+        "timestamp": "${clone_timestamp}",
+        "files": "${files}"
+      }
+    }
+  ],
+
+  "defaults": {
+    "retry_attempts": 3,
+    "max_file_size_mb": 100,
+    "timeout_seconds": 30
+  }
+}
