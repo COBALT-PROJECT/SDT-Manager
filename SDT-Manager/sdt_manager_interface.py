@@ -999,14 +999,21 @@ class SDT_Manager_Interface:
 
                 LOGGER.info("Sending to controller...")
                 start_time = time.time()
-                response = adapter.send_to_controller(
-                    converted, toeid, payload_type
+                access_token = self.manager_core.credential_store.get_most_recent_access_token()
+                controller_result = adapter.send_to_controller(
+                    converted,
+                    toeid,
+                    payload_type,
+                    access_token=access_token,
                 )
                 controller_time = time.time() - start_time
                 LOGGER.info(f"Request completed in {controller_time:.2f} seconds")
 
-                if response is not None and hasattr(response, "text"):
-                    LOGGER.info(f"Response from controller: {response.text[:200]}...")
+                sdt_response = controller_result.get("sdt_response") if controller_result else None
+                ccmledger_result = controller_result.get("ccmledger") if controller_result else None
+
+                if sdt_response is not None and hasattr(sdt_response, "text"):
+                    LOGGER.info(f"Response from controller: {sdt_response.text[:200]}...")
                 else:
                     LOGGER.info("No response received from controller")
 
@@ -1015,6 +1022,12 @@ class SDT_Manager_Interface:
                     "payload_type": payload_type,
                     "validation": validation_payload,
                     "conversion_time": conversion_time,
+                    "controller_time": controller_time,
+                    "sdt": {
+                        "success": sdt_response is not None and getattr(sdt_response, "status_code", 500) < 400,
+                        "status_code": getattr(sdt_response, "status_code", None),
+                    },
+                    "ccmledger": ccmledger_result,
                 })
 
             except Exception as e:
@@ -1041,6 +1054,7 @@ class SDT_Manager_Interface:
 
                 results = []
                 controller_start = time.time()
+                access_token = self.manager_core.credential_store.get_most_recent_access_token()
 
                 for file_path, thing in things.items():
                     try:
@@ -1049,23 +1063,29 @@ class SDT_Manager_Interface:
                         thing_id = file_config.thing_id if file_config else None
 
                         if thing_id:
-                            response = adapter.send_to_controller(
+                            controller_result = adapter.send_to_controller(
                                 thing,
                                 toeid=thing_id,
                                 payload_type=payload_type_value,
+                                access_token=access_token,
                             )
                         else:
-                            response = adapter.send_to_controller(
+                            controller_result = adapter.send_to_controller(
                                 thing,
                                 payload_type=payload_type_value,
+                                access_token=access_token,
                             )
 
+                        sdt_response = controller_result.get("sdt_response") if controller_result else None
+                        ccmledger_result = controller_result.get("ccmledger") if controller_result else None
+
                         results.append({
-                            "status": "success",
+                            "status": "success" if sdt_response is not None and getattr(sdt_response, "status_code", 500) < 400 else "failed",
                             "path": file_path,
                             "payload_type": payload_type_value,
                             "source_type": thing.get("attributes", {}).get("sourceType"),
-                            "response_status": response.status_code if response else None
+                            "response_status": getattr(sdt_response, "status_code", None),
+                            "ccmledger": ccmledger_result,
                         })
                     except Exception as e:
                         results.append({

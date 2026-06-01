@@ -22,14 +22,33 @@ CCMLEDGER_HOST = os.environ.get("CCMLEDGER_HOST", "cobalt-dlt.cobalt.local")
 CCMLEDGER_PORT = os.environ.get("CCMLEDGER_PORT", "3000")
 CCMLEDGER_SBOM_PATH = os.environ.get("CCMLEDGER_SBOM_PATH", "/v1/manufacturer/sbom")
 CCMLEDGER_ENABLED = os.environ.get("CCMLEDGER_ENABLED", "true").lower() in ("1", "true", "yes")
-CCMLEDGER_BEARER_TOKEN = os.environ.get("CCMLEDGER_BEARER_TOKEN")
 
 
-def _forward_to_ccmledger(payload, params=None):
+def _looks_like_jwt(token):
+    if not token or not isinstance(token, str):
+        return False
+    return token.count(".") == 2
+
+
+def _ccmledger_result(attempted, success, reason, status_code=None, detail=None):
+    return {
+        "attempted": attempted,
+        "success": success,
+        "reason": reason,
+        "status_code": status_code,
+        "detail": detail,
+    }
+
+
+def _forward_to_ccmledger(payload, params=None, access_token=None):
     """Mirror the outbound SDT payload to CCMLedger as a best-effort side effect."""
     logger = logging.getLogger(__name__)
     if not CCMLEDGER_ENABLED:
-        return None
+        return _ccmledger_result(
+            attempted=False,
+            success=False,
+            reason="disabled",
+        )
 
     url = f"http://{CCMLEDGER_HOST}:{CCMLEDGER_PORT}{CCMLEDGER_SBOM_PATH}"
     headers = {
@@ -37,10 +56,31 @@ def _forward_to_ccmledger(payload, params=None):
         "X-Correlation-Id": str(int(time.time() * 1000)),
         "X-Forwarded-From": "sdt-manager",
     }
-    if CCMLEDGER_BEARER_TOKEN:
-        headers["Authorization"] = f"Bearer {CCMLEDGER_BEARER_TOKEN}"
+    if access_token:
+        if not _looks_like_jwt(access_token):
+            detail = (
+                f"Identity Manager token is not a JWT (len={len(access_token)}, "
+                f"dot_count={access_token.count('.')})"
+            )
+            logger.error(
+                "CCMLedger forwarding skipped: %s",
+                detail,
+            )
+            return _ccmledger_result(
+                attempted=False,
+                success=False,
+                reason="non_jwt_token",
+                detail=detail,
+            )
+        headers["Authorization"] = f"Bearer {access_token}"
     else:
-        logger.warning("CCMLedger bearer token is not configured; forwarding may be rejected")
+        logger.warning("No Identity Manager access token found in SQLite; skipping CCMLedger forwarding")
+        return _ccmledger_result(
+            attempted=False,
+            success=False,
+            reason="missing_token",
+            detail="No Identity Manager access token found in SQLite",
+        )
 
     ledger_payload = {"content": json.dumps(payload)}
 
@@ -59,14 +99,37 @@ def _forward_to_ccmledger(payload, params=None):
                 response.status_code,
                 response.text[:500],
             )
+            return _ccmledger_result(
+                attempted=True,
+                success=False,
+                reason="http_error",
+                status_code=response.status_code,
+                detail=response.text[:500],
+            )
         else:
             logger.info("CCMLedger forwarding succeeded: status=%s", response.status_code)
-        return response
+            return _ccmledger_result(
+                attempted=True,
+                success=True,
+                reason="success",
+                status_code=response.status_code,
+            )
     except requests.exceptions.RequestException as exc:
         logger.error("CCMLedger forwarding error: %s", exc)
+        return _ccmledger_result(
+            attempted=True,
+            success=False,
+            reason="request_exception",
+            detail=str(exc),
+        )
     except Exception as exc:
         logger.error("Unexpected CCMLedger forwarding error: %s", exc)
-    return None
+        return _ccmledger_result(
+            attempted=True,
+            success=False,
+            reason="unexpected_exception",
+            detail=str(exc),
+        )
 
 
 @dataclass
@@ -196,19 +259,25 @@ class DTModelAdapterV2:
             )
         return spec.transformer(payload)
 
-    def send_to_controller(self, payload, toeid="123456789", payload_type="BOMS"):
-        """Send the transformed Thing payload to the SDT interface and mirror it to CCMLedger."""
+    def send_to_controller(self, payload, toeid="123456789", payload_type="BOMS", access_token=None):
+        """Send payload to SDT first, then mirror to CCMLedger after SDT confirms success."""
         logger = logging.getLogger(__name__)
         url = f"http://{SDT_INTERFACE_HOST}:{SDT_INTERFACE_PORT}/api/SDT/create/"
         params = {"toe_id": toeid, "category": payload_type, "appmap": "true"}
 
         if not isinstance(payload, dict):
             logger.error("Invalid payload type: expected dict, got %s", type(payload).__name__)
-            return None
+            return {
+                "sdt_response": None,
+                "ccmledger": _ccmledger_result(
+                    attempted=False,
+                    success=False,
+                    reason="invalid_payload",
+                    detail=f"expected dict, got {type(payload).__name__}",
+                ),
+            }
 
-        logger.info("Forwarding payload to CCMLedger with params %s", params)
-        _forward_to_ccmledger(payload, params=params)
-
+        error_detail = None
         try:
             logger.info("Sending request to %s with params %s", url, params)
             response = requests.post(
@@ -223,22 +292,52 @@ class DTModelAdapterV2:
                 timeout=30,
             )
             response.raise_for_status()
-            logger.info("Request successful with status code %s", response.status_code)
-            return response
+            logger.info("SDT write confirmed with status code %s", response.status_code)
+
+            logger.info("Forwarding payload to CCMLedger with params %s", params)
+            ccmledger_result = _forward_to_ccmledger(
+                payload,
+                params=params,
+                access_token=access_token,
+            )
+
+            return {
+                "sdt_response": response,
+                "ccmledger": ccmledger_result,
+            }
         except requests.exceptions.HTTPError as exc:
             logger.error("HTTP error occurred: %s, status code: %s", exc, exc.response.status_code)
-            return exc.response
+            return {
+                "sdt_response": exc.response,
+                "ccmledger": _ccmledger_result(
+                    attempted=False,
+                    success=False,
+                    reason="sdt_http_error",
+                    status_code=exc.response.status_code if exc.response is not None else None,
+                    detail=exc.response.text[:500] if exc.response is not None else str(exc),
+                ),
+            }
         except requests.exceptions.ConnectionError as exc:
             logger.error("Connection error occurred: %s", exc)
+            error_detail = str(exc)
         except requests.exceptions.Timeout as exc:
             logger.error("Request timed out: %s", exc)
+            error_detail = str(exc)
         except requests.exceptions.RequestException as exc:
             logger.error("Request error occurred: %s", exc)
-        except json.JSONDecodeError as exc:
-            logger.error("JSON encoding error: %s", exc)
+            error_detail = str(exc)
         except Exception as exc:
             logger.error("Unexpected error sending to controller: %s", exc)
-        return None
+            error_detail = str(exc)
+        return {
+            "sdt_response": None,
+            "ccmledger": _ccmledger_result(
+                attempted=False,
+                success=False,
+                reason="sdt_request_exception",
+                detail=error_detail,
+            ),
+        }
 
     def validate_and_transform(
         self,
