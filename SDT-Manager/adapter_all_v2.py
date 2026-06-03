@@ -24,12 +24,6 @@ CCMLEDGER_SBOM_PATH = os.environ.get("CCMLEDGER_SBOM_PATH", "/v1/manufacturer/sb
 CCMLEDGER_ENABLED = os.environ.get("CCMLEDGER_ENABLED", "true").lower() in ("1", "true", "yes")
 
 
-def _looks_like_jwt(token):
-    if not token or not isinstance(token, str):
-        return False
-    return token.count(".") == 2
-
-
 def _ccmledger_result(attempted, success, reason, status_code=None, detail=None):
     return {
         "attempted": attempted,
@@ -57,21 +51,6 @@ def _forward_to_ccmledger(payload, params=None, access_token=None):
         "X-Forwarded-From": "sdt-manager",
     }
     if access_token:
-        if not _looks_like_jwt(access_token):
-            detail = (
-                f"Identity Manager token is not a JWT (len={len(access_token)}, "
-                f"dot_count={access_token.count('.')})"
-            )
-            logger.error(
-                "CCMLedger forwarding skipped: %s",
-                detail,
-            )
-            return _ccmledger_result(
-                attempted=False,
-                success=False,
-                reason="non_jwt_token",
-                detail=detail,
-            )
         headers["Authorization"] = f"Bearer {access_token}"
     else:
         logger.warning("No Identity Manager access token found in SQLite; skipping CCMLedger forwarding")
