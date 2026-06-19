@@ -19,11 +19,14 @@ spec:
         kubernetes.io/hostname: watchtower
       containers:
       - name: watchtower
-        image: nginx:alpine-perl
+        image: docker.io/library/nginx:trixie-perl
         imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 8080
+        - containerPort: 5000
           name: http
+          protocol: TCP
+        - containerPort: 50051
+          name: grpc
           protocol: TCP
         # Add resource limits for better resource management
         resources:

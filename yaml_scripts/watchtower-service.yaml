@@ -11,8 +11,12 @@ spec:
   ports:
   - name: http
     protocol: TCP
-    port: 8080
-    targetPort: 8080
+    port: 5000
+    targetPort: 5000
+  - name: grpc
+    protocol: TCP
+    port: 50051
+    targetPort: 50051
     # NodePort will be automatically assigned in range 30000-32767
     # Uncomment the next line if you want to specify a specific NodePort
     # nodePort: 30080

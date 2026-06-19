@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: sdt-container
-          image: docker.io/arq101/sdt-main-image:latest #the format to refer to images in k3s image registry
+          image: docker.io/arq101/sdt-main-image:0.2.8 # pinned to the latest published SDT image tag
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000 #for sdt interface
@@ -31,10 +31,10 @@ spec:
               value: "sdt-service"
             - name: MQTT_BROKER_PORT
               value: "1883"
-            - name: CLOUDITOR_HOST
-              value: "10.160.101.137"
-            - name: CLOUDITOR_HOST_PORT
-              value: "8080"
+            - name: CLOUDITOR_IP
+              value: "10.163.1.127"
+            - name: CLOUDITOR_PORT
+              value: "9090"
             - name: IDS_CONNECTOR_HOST
               value: "ids-connector-sdt-service"
             - name: IDS_CONNECTOR_PORT

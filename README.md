@@ -19,8 +19,13 @@ This version of the SDT Manager includes scripts and manifests for:
 - [Usage](#usage)
   - [SDT Manager Deployment](#sdt-manager-deployment)
 - [Features](#features)
+  - [API endpoint reference](#api-endpoint-reference)
   - [SDT pod lifecycle management](#sdt-pod-lifecycle-management)
   - [IDS connector pods lifecycle management](#ids-connector-pods-lifecycle-management)
+  - [Authentication APIs](#authentication-apis)
+  - [System status APIs](#system-status-apis)
+  - [SDT adapter APIs](#sdt-adapter-apis)
+  - [CCMLedger forwarding](#ccmledger-forwarding)
 - [Containerization](#containerization)
   - [SDT Manager containerized deployment and lifecycle management](#deployment)
 
@@ -151,57 +156,211 @@ python3 main.py
 
 ## Features
 
-### SDT pod lifecycle management
-NOTE: The API server of the SDT Manager runs on port 8008, the Graphical User Interface (GUI) can be found at 8008/docs/ (http://localhost:8008/docs/)
+### API endpoint reference
 
-The API calls can be used for managing the lifecycle of the SDT pods:
-
-Instantiation: 
-  - Select the API call of type POST and API endpoint '/deploy'
-  NOTE: The SDT is deployed with a hexadecimal identifier which can is rendered in the response of the API call, and can also obtained by performing GET status request.
-
-Get Status:
-  - Select the API call of type GET with API endpoint '/deployments'
-
-Send data payload to the SDT Manager (for it to be relayed to the SDT)
-  - Select the API call of type POST with the API endpoint '/api/SDT/create' 
-
-Send an SBOM payload through the SDT Manager adaptor:
-  - The SDT Manager adaptor endpoint runs on the SDT Manager API server, usually port `8008`:
-
-```bash
-python3 post_sbom.py
-```
-
-  - The equivalent HTTP target is:
+The SDT Manager API server runs on port `8008` by default. Interactive OpenAPI documentation is available at:
 
 ```text
-http://localhost:8008/api/SDTM/adapt
+http://localhost:8008/docs/
 ```
 
-  - Do not send the SBOM directly to `localhost:30008/api/SDTM/adapt`. Port `30008` is the SDT service/controller interface, not the SDT Manager adaptor API. The manager adaptor validates and transforms the SBOM, then forwards the transformed payload to the SDT service `/api/SDT/create/` endpoint.
+The base URL for the examples below is:
 
-CCMLedger SBOM forwarding:
-  - The SDT Manager can mirror the transformed SBOM payload to CCMLedger as a best-effort side effect.
-  - CCMLedger exposes its API documentation at:
+```text
+http://localhost:8008
+```
+
+### SDT pod lifecycle management
+
+Deploy an SDT instance:
+
+```text
+POST /api/SDTM/digital-twin
+```
+
+This deploys the SDT pod and service, deploys the IDS-SDT connector, discovers or deploys Watchtower, and starts the wallet/token authentication flow in a background thread. The response includes the generated `identifier`, plus `ids_connector_id`, `watchtower_id`, and `auth_status`.
+
+Delete an SDT instance:
+
+```text
+DELETE /api/SDTM/digital-twin/{twinId}
+```
+
+This deletes the SDT deployment, linked IDS-SDT connector, linked Watchtower, wallet registration, and local credential records for the SDT and linked components.
+
+Retrieve one SDT instance:
+
+```text
+GET /api/SDTM/digital-twin/{twinId}
+```
+
+Returns pod state, deployment name, pod IP, node name, readiness, metadata timestamps, authentication status, and linked component authentication status.
+
+List current SDT deployments:
+
+```text
+GET /api/SDTM/deployments
+```
+
+Returns all SDT deployments currently tracked by the running SDT Manager process.
+
+### IDS connector pods lifecycle management
+
+Deploy an IDS connector:
+
+```text
+POST /connector/deploy?connector_type=ids_sdt
+```
+
+The `connector_type` query parameter defaults to `ids_sdt`.
+
+Delete an IDS connector:
+
+```text
+DELETE /connector/delete?cleanup_resources=true
+```
+
+Request body:
+
+```json
+{
+  "identifier": "connector_id"
+}
+```
+
+The `cleanup_resources` query parameter defaults to `true`.
+
+List current IDS connectors:
+
+```text
+GET /connectors
+```
+
+Get one IDS connector status:
+
+```text
+GET /connector/{connector_id}
+```
+
+### Authentication APIs
+
+Get authentication status for an SDT or linked component:
+
+```text
+GET /api/SDTM/auth/{twinId}
+```
+
+Returns whether a token exists, current credential status, scope, timestamps, and `linked_sdt_id` when the requested ID belongs to a linked component.
+
+List all credential records:
+
+```text
+GET /api/SDTM/auth
+```
+
+Returns credential metadata for SDTs and linked components. Access tokens and secrets are not included in this listing.
+
+### System status APIs
+
+Overall system status:
+
+```text
+GET /status
+```
+
+Returns deployment counts, connector counts, Watchtower count, authentication summary, and system health.
+
+Health check:
+
+```text
+GET /health
+```
+
+Readiness check:
+
+```text
+GET /ready
+```
+
+### SDT adapter APIs
+
+The adapter APIs run on the SDT Manager API server. Do not send adapter payloads directly to `localhost:30008`; port `30008` is the SDT service/controller interface. The manager adapter validates and transforms incoming artifacts, then forwards the transformed Thing payload to the SDT service `/api/SDT/create/` endpoint.
+
+Validate, transform, and send one payload:
+
+```text
+POST /api/SDTM/adapt?toeid=00000000-0000-0000-0000-000000000000&payload_type=BOMS
+```
+
+Supported `payload_type` values are:
+
+```text
+BOMS, cyclonedx, oscal, arm, mud, muds
+```
+
+The request body is the JSON artifact to validate and transform. The response includes validation details, conversion time, SDT forwarding status, and CCMLedger forwarding status.
+
+Example:
+
+```bash
+curl -X POST "http://localhost:8008/api/SDTM/adapt?payload_type=BOMS" \
+  -H "Content-Type: application/json" \
+  -d @sample_bom.json
+```
+
+Process multiple files:
+
+```text
+POST /api/SDTM/adapt/multiple/
+```
+
+Request body:
+
+```json
+{
+  "file_configs": [
+    {
+      "path": "/path/to/artifact.json",
+      "type": "BOMS",
+      "thing_id": "optional-target-id"
+    }
+  ]
+}
+```
+
+Detect CycloneDX BOM type:
+
+```text
+GET /api/SDTM/adapt/cyclonedx/detect/
+```
+
+This endpoint expects a CycloneDX JSON payload in the request body and returns the detected BOM type and basic payload counts.
+
+Validate a CycloneDX payload without conversion:
+
+```text
+GET /api/SDTM/adapt/cyclonedx/validate/?strict=false&thorough=true
+```
+
+This endpoint expects a CycloneDX JSON payload in the request body and returns validation results without sending anything to the SDT.
+
+### CCMLedger forwarding
+
+The SDT Manager can mirror transformed payloads to CCMLedger as a best-effort side effect after the SDT write succeeds.
+
+CCMLedger API documentation:
 
 ```text
 http://cobalt-dlt.cobalt.local:3000/api-docs/
 ```
 
-  - The documented SBOM endpoint is:
+Configured CCMLedger endpoint:
 
 ```text
 POST /v1/manufacturer/sbom
 ```
 
-  - CCMLedger documents this endpoint with `bearerAuth`, so a request without an `Authorization: Bearer <token>` header may be rejected with:
-
-```json
-{"message":"Unauthorized: Missing header"}
-```
-
-  - The documented request body shape is:
+Documented request body shape:
 
 ```json
 {
@@ -209,29 +368,11 @@ POST /v1/manufacturer/sbom
 }
 ```
 
-  - If CCMLedger forwarding is not needed during local testing, set `CCMLEDGER_ENABLED=false` in `SDT-Manager/.env` before starting `main.py`.
+CCMLedger forwarding uses the most recent access token stored by the SDT Manager credential store. If forwarding is not needed during local testing, set `CCMLEDGER_ENABLED=false` in `SDT-Manager/.env` before starting `main.py`.
 
-Termination:
-  - Select the API call of type POST with API endpoint '/delete'
-  NOTE: use the identifier of the pod as an input parameter to terminate the SDT pod.
+### Provider and Consumer Pods synchronization
 
-### IDS connector pods lifecycle management
-The API calls that can be used to manage the lifecycle of the IDS connector pods are:
-
-Instantiation:
-  - Select the API call of type POST with the endpoint '/connector/deploy' and mention if you want a consumer/provider ids connector as the string query of the API call.
-
-Get Status:
-  - Select the API call of type GET with the endpoint '/connectors'
-
-Scaling:
-  - Select the API call of type POST with the endpoint '/connector/{connector_id}/scale' and mention the number of replica IDS connector pods you desire in the deployment.
-
-Termination:
-  - Select the API call of type POST with endpoint '/connector/delete' and provide the connector id as a query string for the API call to delete the desired ids connector pod.
-
-Provider and Consumer Pods synchronization:
-  - Go to the ids-sync-service folder and execute build-and-deploy.sh file (read the readme.md file for detailed information on information routing between provider and consumer pods)
+Go to the `ids-sync-service` folder and execute `build-and-deploy.sh`. Read the `ids-sync-service/Readme.md` file for detailed information on routing between provider and consumer pods.
 
 ## Containerization
 
