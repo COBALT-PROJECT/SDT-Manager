@@ -189,7 +189,7 @@ class SDT_Manager_Interface:
             wt_port = int(os.environ.get("WATCHTOWER_AUTH_PORT", "8080"))
             self._send_token_to_service(
                 wt_service_name, wt_port, auth_payload, "Watchtower",
-                endpoint="/auth/token"
+                endpoint="/api/watchtower/configauth"
             )
 
         LOGGER.info(f"Token distribution completed for SDT {sdt_identifier}")

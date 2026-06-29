@@ -19,8 +19,8 @@ spec:
         kubernetes.io/hostname: watchtower
       containers:
       - name: watchtower
-        image: docker.io/library/nginx:trixie-perl
-        imagePullPolicy: IfNotPresent
+        image: docker.io/library/certify:latest #docker.io/library/nginx:trixie-perl
+        imagePullPolicy: Never
         ports:
         - containerPort: 5000
           name: http
@@ -34,7 +34,7 @@ spec:
             memory: "128Mi"
             cpu: "100m"
           limits:
-            memory: "512Mi"
+            memory: "2048Mi"
             cpu: "500m"
         # Add liveness and readiness probes if your application supports health checks
         # Uncomment and adjust the following if your app has health endpoints
