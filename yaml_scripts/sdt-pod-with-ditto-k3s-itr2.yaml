@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: sdt-container
-          image: docker.io/arq101/sdt-main-image:0.2.8 # pinned to the latest published SDT image tag
+          image: docker.io/library/sdt-main-image:v0.2.9 # pinned to the latest published SDT image tag
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000 #for sdt interface

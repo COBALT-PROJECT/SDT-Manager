@@ -20,7 +20,7 @@ class DeploymentResponse(BaseModel):
     message: str
     pod_name: Optional[str] = None
     identifier: Optional[str] = None
-    watchtower_id: Optional[str] = None
+    # watchtower_id: Optional[str] = None  # Watchtower workflow disabled
     ids_connector_id: Optional[str] = None
     auth_status: Optional[str] = None
 
@@ -53,7 +53,7 @@ class SDT_Manager_Interface:
         """Initialize with reference to the SDT Manager Core"""
         self.manager_core = manager_core
         self.sdt_to_ids_map = {}        # Maps SDT identifier -> IDS-SDT connector_id
-        self.sdt_to_watchtower_map = {} # Maps SDT identifier -> Watchtower identifier
+        # self.sdt_to_watchtower_map = {} # Watchtower workflow disabled
         self.app = FastAPI(
             title="SDT Deployment API",
             description="API for managing SDT deployments and IDS connectors in Kubernetes",
@@ -77,8 +77,7 @@ class SDT_Manager_Interface:
             )
         return adapter
     
-    def _run_auth_flow_async(self, sdt_identifier: str, ids_connector_id: Optional[str],
-                              watchtower_id: Optional[str]):
+    def _run_auth_flow_async(self, sdt_identifier: str, ids_connector_id: Optional[str]):
         """
         Run the wallet registration and token acquisition in a background
         thread so the deploy endpoint can return quickly.
@@ -86,28 +85,25 @@ class SDT_Manager_Interface:
         Once the token is obtained it is:
           1. Stored in the credential store for the SDT (already done by
              register_and_get_token).
-          2. Distributed via HTTP POST to the SDT, IDS-SDT connector, and
-             Watchtower.
-          3. Also stored in the credential store for the IDS-SDT connector
-             and Watchtower, each row carrying linked_sdt_id = sdt_identifier
-             so all three are traceable back to the same parent SDT.
+          2. Distributed via HTTP POST to the SDT and IDS-SDT connector.
+          3. Also stored in the credential store for the IDS-SDT connector,
+             carrying linked_sdt_id = sdt_identifier.
 
         Args:
             sdt_identifier:   Hex identifier of the deployed SDT.
             ids_connector_id: Hex identifier of the IDS-SDT connector (may be None).
-            watchtower_id:    Hex identifier of the Watchtower (may be None).
         """
         LOGGER.info(f"Background auth flow started for SDT {sdt_identifier}")
 
         try:
-            # Pass ids_connector_id and watchtower_id so register_and_get_token
-            # stores credential rows for all three components in a single call.
+            # Pass ids_connector_id so register_and_get_token stores credential
+            # rows for the SDT and IDS-SDT connector in a single call.
             # No separate store_component_credentials() call is needed here.
             success, access_token = (
                 self.manager_core.auth_manager.register_and_get_token(
                     sdt_id=sdt_identifier,
                     ids_connector_id=ids_connector_id,
-                    watchtower_id=watchtower_id,
+                    # watchtower_id=watchtower_id,  # Watchtower workflow disabled
                 )
             )
 
@@ -120,18 +116,16 @@ class SDT_Manager_Interface:
 
             # Credentials already stored in SQLite by register_and_get_token.
             # _distribute_token handles HTTP delivery only.
-            self._distribute_token(sdt_identifier, access_token,
-                                   ids_connector_id, watchtower_id)
+            self._distribute_token(sdt_identifier, access_token, ids_connector_id)
 
         except Exception as e:
             LOGGER.error(f"Auth flow exception for SDT {sdt_identifier}: {e}")
 
     def _distribute_token(self, sdt_identifier: str, access_token: str,
-                          ids_connector_id: Optional[str],
-                          watchtower_id: Optional[str]):
+                          ids_connector_id: Optional[str]):
         """
-        Send the full credentials JSON payload to the running SDT, IDS-SDT
-        and Watchtower components via HTTP POST to their /auth/token endpoint.
+        Send the full credentials JSON payload to the running SDT and IDS-SDT
+        components via HTTP POST to their auth endpoints.
 
         Credential storage for all three components is already handled by
         register_and_get_token(). This method only performs HTTP delivery.
@@ -140,7 +134,6 @@ class SDT_Manager_Interface:
             sdt_identifier:   Hex identifier of the SDT.
             access_token:     The OAuth2 access token to distribute.
             ids_connector_id: Connector identifier (may be None).
-            watchtower_id:    Watchtower identifier (may be None).
         """
         LOGGER.info(f"Distributing credentials to components for SDT {sdt_identifier}")
 
@@ -154,7 +147,7 @@ class SDT_Manager_Interface:
             "components": {
                 "sdt": sdt_identifier,
                 "ids_connector": ids_connector_id,
-                "watchtower": watchtower_id,
+                # "watchtower": watchtower_id,  # Watchtower workflow disabled
             },
         }
 
@@ -183,14 +176,14 @@ class SDT_Manager_Interface:
             else:
                 LOGGER.warning("Could not resolve IDS-SDT service — skipping token delivery")
 
-        # --- Watchtower service ---
-        if watchtower_id:
-            wt_service_name = "watchtower-service"
-            wt_port = int(os.environ.get("WATCHTOWER_AUTH_PORT", "8080"))
-            self._send_token_to_service(
-                wt_service_name, wt_port, auth_payload, "Watchtower",
-                endpoint="/api/watchtower/configauth"
-            )
+        # --- Watchtower service disabled ---
+        # if watchtower_id:
+        #     wt_service_name = "watchtower-service"
+        #     wt_port = int(os.environ.get("WATCHTOWER_AUTH_PORT", "8080"))
+        #     self._send_token_to_service(
+        #         wt_service_name, wt_port, auth_payload, "Watchtower",
+        #         endpoint="/api/watchtower/configauth"
+        #     )
 
         LOGGER.info(f"Token distribution completed for SDT {sdt_identifier}")
 
@@ -366,12 +359,12 @@ class SDT_Manager_Interface:
         async def deploy_sdt():
             """
             Deploy an SDT pod and service, then automatically:
-              1. Deploy IDS-SDT connector and Watchtower
+              1. Deploy IDS-SDT connector
               2. Register the SDT with the wallet controller (using its hex ID)
               3. Obtain an OAuth2 access token
               4. Store credentials in SQLite for the SDT, IDS-SDT connector,
-                 and Watchtower (IDS and Watchtower rows carry linked_sdt_id)
-              5. Distribute the token to SDT, IDS-SDT and Watchtower via HTTP
+                 (IDS rows carry linked_sdt_id)
+              5. Distribute the token to SDT and IDS-SDT via HTTP
             """
             try:
                 # --- 1. Deploy SDT pod + service ---
@@ -403,41 +396,37 @@ class SDT_Manager_Interface:
                         "IDS-SDT connector deployment failed, SDT will run without connector"
                     )
 
-                # --- 3. Deploy / discover Watchtower ---
-                watchtower_id = None
-                wt_pod_name, watchtower_id = (
-                    self.manager_core.watchtower_manager.get_or_register_existing_watchtower()
-                )
-
-                if wt_pod_name and watchtower_id:
-                    LOGGER.info(
-                        f"Watchtower exists: {wt_pod_name} (ID: {watchtower_id}), "
-                        "skipping deployment"
-                    )
-                else:
-                    LOGGER.info("No existing Watchtower found, deploying...")
-                    wt_pod_name, watchtower_id = (
-                        self.manager_core.watchtower_manager.deploy_watchtower()
-                    )
-                    if wt_pod_name and watchtower_id:
-                        LOGGER.info(f"Watchtower deployed: {wt_pod_name}, ID={watchtower_id}")
-                    else:
-                        LOGGER.warning(
-                            "Watchtower deployment failed, SDT will run without monitoring"
-                        )
-
-                # Track the Watchtower ID for this SDT so deletion can find it
-                # directly without rediscovering via kubectl
-                if watchtower_id:
-                    self.sdt_to_watchtower_map[identifier] = watchtower_id
+                # --- 3. Watchtower workflow disabled ---
+                # watchtower_id = None
+                # wt_pod_name, watchtower_id = (
+                #     self.manager_core.watchtower_manager.get_or_register_existing_watchtower()
+                # )
+                # if wt_pod_name and watchtower_id:
+                #     LOGGER.info(
+                #         f"Watchtower exists: {wt_pod_name} (ID: {watchtower_id}), "
+                #         "skipping deployment"
+                #     )
+                # else:
+                #     LOGGER.info("No existing Watchtower found, deploying...")
+                #     wt_pod_name, watchtower_id = (
+                #         self.manager_core.watchtower_manager.deploy_watchtower()
+                #     )
+                #     if wt_pod_name and watchtower_id:
+                #         LOGGER.info(f"Watchtower deployed: {wt_pod_name}, ID={watchtower_id}")
+                #     else:
+                #         LOGGER.warning(
+                #             "Watchtower deployment failed, SDT will run without monitoring"
+                #         )
+                # if watchtower_id:
+                #     self.sdt_to_watchtower_map[identifier] = watchtower_id
 
                 # --- 4. Start auth flow in background thread ---
                 # register_and_get_token stores credentials for the SDT,
-                # IDS connector, and Watchtower all in one call.
+                # IDS connector in one call.
                 # _distribute_token handles HTTP delivery only.
                 auth_thread = threading.Thread(
                     target=self._run_auth_flow_async,
-                    args=(identifier, ids_connector_id, watchtower_id),
+                    args=(identifier, ids_connector_id),
                     daemon=True,
                     name=f"auth-{identifier}",
                 )
@@ -449,7 +438,7 @@ class SDT_Manager_Interface:
                     message="SDT deployment successful — authentication in progress",
                     pod_name=pod_name,
                     identifier=identifier,
-                    watchtower_id=watchtower_id,
+                    # watchtower_id=watchtower_id,  # Watchtower workflow disabled
                     ids_connector_id=ids_connector_id,
                     auth_status="in_progress",
                 )
@@ -469,10 +458,9 @@ class SDT_Manager_Interface:
             """
             Delete an SDT deployment by identifier.  Also:
               1. Delete associated IDS-SDT connector
-              2. Delete Watchtower
-              3. Delete twin registration from wallet controller
-              4. Remove credentials for the SDT AND all linked components
-                 (IDS-SDT connector, Watchtower) from SQLite in one transaction
+              2. Delete twin registration from wallet controller
+              3. Remove credentials for the SDT AND all linked components
+                 (IDS-SDT connector) from SQLite in one transaction
             """
             try:
                 # Verify the identifier exists in the pod map
@@ -508,20 +496,20 @@ class SDT_Manager_Interface:
                     del self.sdt_to_ids_map[twinId]
                     LOGGER.info(f"IDS-SDT connector deleted: {ids_connector_id}")
 
-                # --- 3. Delete Watchtower if it exists ---
-                watchtower_id = self.sdt_to_watchtower_map.get(twinId)
-                if watchtower_id:
-                    LOGGER.info(f"Deleting Watchtower: {watchtower_id}")
-                    self.manager_core.watchtower_manager.delete_watchtower_by_id(
-                        watchtower_id, cleanup_service=True
-                    )
-                    del self.sdt_to_watchtower_map[twinId]
-                    LOGGER.info(f"Watchtower deleted: {watchtower_id}")
+                # --- 3. Watchtower deletion disabled ---
+                # watchtower_id = self.sdt_to_watchtower_map.get(twinId)
+                # if watchtower_id:
+                #     LOGGER.info(f"Deleting Watchtower: {watchtower_id}")
+                #     self.manager_core.watchtower_manager.delete_watchtower_by_id(
+                #         watchtower_id, cleanup_service=True
+                #     )
+                #     del self.sdt_to_watchtower_map[twinId]
+                #     LOGGER.info(f"Watchtower deleted: {watchtower_id}")
 
                 # --- 4. Delete auth data (wallet + SQLite) ---
                 # delete_twin_auth calls delete_sdt_and_linked_credentials which
                 # removes the SDT row AND all rows where linked_sdt_id == twinId
-                # (IDS-SDT connector, Watchtower) in a single transaction.
+                # (IDS-SDT connector) in a single transaction.
                 LOGGER.info(
                     f"Deleting authentication data for SDT {twinId} "
                     "and all linked components"
@@ -846,7 +834,7 @@ class SDT_Manager_Interface:
         async def get_auth_status(twinId: str):
             """
             Retrieve the authentication / credential status for an SDT or
-            any linked component (IDS-SDT connector, Watchtower).
+            any linked component (IDS-SDT connector).
             If the ID belongs to a linked component, the response includes
             the parent SDT identifier.
             """
@@ -902,10 +890,10 @@ class SDT_Manager_Interface:
 
         @self.app.get("/status", tags=["System"])
         async def get_system_status():
-            """Get overall system status including SDT, Watchtower, IDS connector deployments, and auth"""
+            """Get overall system status including SDT, IDS connector deployments, and auth"""
             try:
                 sdt_deployments = self.manager_core.lifecycle_manager.list_available_deployments()
-                watchtower_count = self.manager_core.watchtower_manager.get_watchtower_count()
+                # watchtower_count = self.manager_core.watchtower_manager.get_watchtower_count()
                 ids_connectors = self.manager_core.connector_manager.list_connectors()
                 auth_records = self.manager_core.credential_store.list_all()
 
@@ -915,7 +903,7 @@ class SDT_Manager_Interface:
 
                 return {
                     "sdt_deployments": {"count": len(sdt_deployments), "deployments": sdt_deployments},
-                    "watchtower_instances": {"count": watchtower_count},
+                    # "watchtower_instances": {"count": watchtower_count},
                     "ids_connectors": {"count": len(ids_connectors), "connectors": ids_connectors},
                     "authentication": {
                         "total_registered": len(sdt_records),
@@ -941,7 +929,7 @@ class SDT_Manager_Interface:
                 "service": "SDT Manager API",
                 "components": {
                     "sdt_manager": "active",
-                    "watchtower_manager": "active",
+                    # "watchtower_manager": "active",
                     "connector_manager": "active",
                     "adapter": "active",
                     "auth_manager": "active",

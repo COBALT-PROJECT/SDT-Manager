@@ -4,7 +4,8 @@ import threading
 import os
 from sdt_lifecycle_manager import SDT_LifeCycleManager
 from sdt_connector_manager import SDT_ConnectorManager
-from watchtower_manager import WatchTower_LifeCycleManager
+# Watchtower workflow disabled; keep watchtower_manager.py available for standalone use.
+# from watchtower_manager import WatchTower_LifeCycleManager
 from sdt_manager_interface import SDT_Manager_Interface
 from sdt_credential_store import SDTCredentialStore
 from sdt_authentication_manager import SDTAuthenticationManager
@@ -30,9 +31,9 @@ class SDT_ManagerCore:
         self.lifecycle_manager = SDT_LifeCycleManager()
         LOGGER.info("SDT Lifecycle Manager has been instantiated")
         
-        # Initialize Watchtower Lifecycle Manager
-        self.watchtower_manager = WatchTower_LifeCycleManager()
-        LOGGER.info("Watchtower Lifecycle Manager has been instantiated")
+        # Watchtower workflow disabled in SDT Manager.
+        # self.watchtower_manager = WatchTower_LifeCycleManager()
+        # LOGGER.info("Watchtower Lifecycle Manager has been instantiated")
         
         # Initialize SDT Connector Manager (independent IDS connector management)
         self.connector_manager = SDT_ConnectorManager()
@@ -53,7 +54,7 @@ class SDT_ManagerCore:
         LOGGER.info("SDT Credential Store has been instantiated")
 
         # Clean up any stale credentials left over from a previous process run.
-        # Since pod_map and sdt_to_watchtower_map are in-memory, any credentials
+        # Since pod_map and sdt_to_ids_map are in-memory, any credentials
         # in the DB at startup belong to deployments we no longer track.
         self._cleanup_stale_credentials()
         
@@ -89,8 +90,8 @@ class SDT_ManagerCore:
         """
         Remove all credential rows left over from a previous process run.
 
-        On startup the in-memory pod_map, sdt_to_ids_map, and
-        sdt_to_watchtower_map are empty, so any rows already in the
+        On startup the in-memory pod_map and sdt_to_ids_map are empty,
+        so any rows already in the
         credential store belong to deployments we can no longer manage.
         Purging them keeps the store consistent with the live cluster state.
 

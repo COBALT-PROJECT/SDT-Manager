@@ -33,7 +33,7 @@ from sdt_credential_store import (
     SDTCredentialStore,
     COMPONENT_SDT,
     COMPONENT_IDS_CONNECTOR,
-    COMPONENT_WATCHTOWER,
+    # COMPONENT_WATCHTOWER,  # Watchtower workflow disabled
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -182,26 +182,26 @@ class SDTAuthenticationManager:
                 f"(linked to SDT {sdt_id})"
             )
 
-        # Step 7 — Store credentials for the Watchtower instance (if present)
-        if watchtower_id:
-            self.credential_store.store_credentials(
-                sdt_id=watchtower_id,
-                client_id=client_id,
-                client_secret=client_secret,
-                token_scope=self.twin_scope,
-                linked_sdt_id=sdt_id,
-                component_type=COMPONENT_WATCHTOWER,
-            )
-            self.credential_store.store_access_token(watchtower_id, access_token)
-            LOGGER.info(
-                f"Stored credentials for Watchtower {watchtower_id} "
-                f"(linked to SDT {sdt_id})"
-            )
+        # Step 7 — Watchtower credential storage disabled
+        # if watchtower_id:
+        #     self.credential_store.store_credentials(
+        #         sdt_id=watchtower_id,
+        #         client_id=client_id,
+        #         client_secret=client_secret,
+        #         token_scope=self.twin_scope,
+        #         linked_sdt_id=sdt_id,
+        #         component_type=COMPONENT_WATCHTOWER,
+        #     )
+        #     self.credential_store.store_access_token(watchtower_id, access_token)
+        #     LOGGER.info(
+        #         f"Stored credentials for Watchtower {watchtower_id} "
+        #         f"(linked to SDT {sdt_id})"
+        #     )
 
         LOGGER.info(
             f"Authentication flow completed for SDT {sdt_id} — "
-            f"IDS connector: {ids_connector_id or 'none'}, "
-            f"Watchtower: {watchtower_id or 'none'}"
+            f"IDS connector: {ids_connector_id or 'none'}"
+            # f", Watchtower: {watchtower_id or 'none'}"
         )
         return True, access_token
 
