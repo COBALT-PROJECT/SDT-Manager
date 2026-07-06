@@ -186,10 +186,10 @@ class SDT_Manager_Interface:
         # --- Watchtower service ---
         if watchtower_id:
             wt_service_name = "watchtower-service"
-            wt_port = int(os.environ.get("WATCHTOWER_AUTH_PORT", "8080"))
+            wt_port = int(os.environ.get("WATCHTOWER_AUTH_PORT", "5000"))
             self._send_token_to_service(
                 wt_service_name, wt_port, auth_payload, "Watchtower",
-                endpoint="/api/watchtower/configauth"
+                endpoint="/api/IDSConnector/Watchtower/configauth"
             )
 
         LOGGER.info(f"Token distribution completed for SDT {sdt_identifier}")
@@ -224,30 +224,62 @@ class SDT_Manager_Interface:
         url = f"http://{cluster_ip}:{port}{endpoint}"
         LOGGER.info(f"Sending credentials to {component_label} at {url}")
 
-        try:
-            response = req.post(
-                url,
-                json=auth_payload,
-                headers={"Content-Type": "application/json"},
-                timeout=15,
-            )
-            if response.status_code in (200, 201, 204):
-                LOGGER.info(
-                    f"Credentials delivered to {component_label} ({service_name}) "
-                    f"— HTTP {response.status_code}"
+        # Retry with backoff — the target component's HTTP server may still
+        # be booting even though Kubernetes reports the pod as "Running".
+        # This is especially common for the Watchtower Flask app which is
+        # started via start.sh and needs a few seconds to bind its port.
+        max_retries = 6
+        retry_delay = 5  # seconds
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = req.post(
+                    url,
+                    json=auth_payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=15,
                 )
-                return True
-            else:
-                LOGGER.error(
-                    f"Token delivery to {component_label} ({service_name}) failed — "
-                    f"HTTP {response.status_code}: {response.text[:200]}"
-                )
-        except req.exceptions.ConnectionError as e:
-            LOGGER.error(f"Connection to {component_label} ({url}) failed: {e}")
-        except req.exceptions.Timeout:
-            LOGGER.error(f"Timeout sending credentials to {component_label} ({url})")
-        except req.exceptions.RequestException as e:
-            LOGGER.error(f"Error sending credentials to {component_label} ({url}): {e}")
+                if response.status_code in (200, 201, 204):
+                    LOGGER.info(
+                        f"Credentials delivered to {component_label} ({service_name}) "
+                        f"— HTTP {response.status_code}"
+                        + (f" (attempt {attempt})" if attempt > 1 else "")
+                    )
+                    return True
+                else:
+                    LOGGER.error(
+                        f"Token delivery to {component_label} ({service_name}) failed — "
+                        f"HTTP {response.status_code}: {response.text[:200]}"
+                    )
+                    # Non-connection errors (4xx/5xx) are not transient — stop retrying
+                    return False
+            except req.exceptions.ConnectionError as e:
+                if attempt < max_retries:
+                    LOGGER.warning(
+                        f"Connection to {component_label} ({url}) failed "
+                        f"(attempt {attempt}/{max_retries}): {e} — retrying in {retry_delay}s"
+                    )
+                    time.sleep(retry_delay)
+                else:
+                    LOGGER.error(
+                        f"Connection to {component_label} ({url}) failed after "
+                        f"{max_retries} attempts: {e}"
+                    )
+            except req.exceptions.Timeout:
+                if attempt < max_retries:
+                    LOGGER.warning(
+                        f"Timeout sending credentials to {component_label} ({url}) "
+                        f"(attempt {attempt}/{max_retries}) — retrying in {retry_delay}s"
+                    )
+                    time.sleep(retry_delay)
+                else:
+                    LOGGER.error(
+                        f"Timeout sending credentials to {component_label} ({url}) "
+                        f"after {max_retries} attempts"
+                    )
+            except req.exceptions.RequestException as e:
+                LOGGER.error(f"Error sending credentials to {component_label} ({url}): {e}")
+                return False
         return False
 
     def _send_template_to_sdt(self, service_name: str, port: int):

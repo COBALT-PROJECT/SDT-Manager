@@ -6,3 +6,4 @@ __pycache__/
 VALIDATION_REPORT.md
 *.txt
 *.log
+*sdt_credentials.db
