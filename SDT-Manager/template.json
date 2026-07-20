@@ -1,34 +1,66 @@
 {
-  "config_name": "Quantum usecase",
+  "config_name": "AI usecase",
   "config_version": "3.0",
 
   "evidence_collectors": [
     {
-      "collector_id": "clouditor",
+      "collector_id": "aishield-watchtower",
       "enabled": true,
-      "categories": ["QDT"],
+      "categories": ["AI"],
 
-      "endpoint": "http://${CLOUDITOR_IP}:${CLOUDITOR_PORT}/v1/assessment/evidences",
+      "mqtt": {
+        "topics": [
+          "ditto-cobalt/+/+/things/twin/events/created",
+          "ditto-cobalt/+/+/things/twin/events/modified"
+        ],
+        "filters": {
+          "sourceType": ["Repository"]
+        }
+      },
+
+      "endpoint": "http://localhost:",
+
+      "evidence": {
+        "type": "zip",
+        "include": ["*.py", "*.h5", "*.ipynb", "*.txt", "*.csv"],
+        "exclude": [".git/*", "__pycache__/*", "*.pyc", "node_modules/*"]
+      }
+    },
+
+    {
+      "collector_id": "aishield-spectra",
+      "enabled": true,
+      "categories": ["AI"],
+
+      "mqtt": {
+        "filters": {
+          "file_extensions": [".csv", ".pkl", ".h5"]
+        }
+      },
+
+      "endpoint": "http://localhost:",
       "auth": {
-        "type": "oauth2",
-        "token_url": "http://${CLOUDITOR_IP}:${CLOUDITOR_PORT}/v1/auth/token",
-        "client_id": "clouditor",
-        "client_secret_env": "CLOUDITOR_SECRET"
+        "type": "bearer",
+        "token_env": "SPECTRA_TOKEN"
       },
 
       "evidence": {
         "type": "files",
-        "files": ["qpu_data.json"]
+        "files": ["dataset.csv", "model.pkl", "model.h5"]
       },
 
-      "transform": "qpu_clouditor"
-    },
-
+      "transform": {
+        "toe_id": "${toe_id}",
+        "project": "${repo_name}",
+        "timestamp": "${clone_timestamp}",
+        "files": "${files}"
+      }
+    }
   ],
 
   "defaults": {
     "retry_attempts": 3,
-    "max_file_size_mb": 50,
-    "timeout_seconds": 45
+    "max_file_size_mb": 100,
+    "timeout_seconds": 30
   }
 }
