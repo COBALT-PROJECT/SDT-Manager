@@ -2,6 +2,7 @@
 import subprocess
 import time
 import logging
+import os
 import uuid
 import re
 from typing import Dict, Optional, List, Tuple
@@ -19,7 +20,7 @@ IDS_CONFIG_FILES = {
         "ecc-consumer-configmap-v.2.yaml",
         "consumer-compiled-v-0.3.yaml",
         "ids_connector_sdt_k8s_deployment.yml",
-        "pods_sync_k3s.yml"
+        os.getenv("IDS_SYNC_MANIFEST", "pods_sync_k3s.yml")  # usecase-specific sync manifest, set via .env
         # Removed pods_sync_monitor.yml as it requires Prometheus CRDs
     ],
     "ids_toe": [

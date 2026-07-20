@@ -8,10 +8,14 @@
       "enabled": true,
       "categories": ["QDT"],
 
+      "mqtt": {
+        "topics": ["ditto-cobalt/*"]
+      },
+
       "endpoint": "http://${CLOUDITOR_IP}:${CLOUDITOR_PORT}/v1/assessment/evidences",
       "auth": {
         "type": "oauth2",
-        "token_url": "http://${CLOUDITOR_IP}:${CLOUDITOR_PORT}/v1/auth/token",
+        "token_url": "http://${CLOUDITOR_IP}:${CLOUDITOR_AUTH_PORT}/v1/auth/token",
         "client_id": "clouditor",
         "client_secret_env": "CLOUDITOR_SECRET"
       },
@@ -21,9 +25,8 @@
         "files": ["qpu_data.json"]
       },
 
-      "transform": "qpu_clouditor"
-    },
-
+      "transform": "qpu_data"
+    }
   ],
 
   "defaults": {
