@@ -186,7 +186,7 @@ class SDT_Manager_Interface:
         # --- Watchtower service ---
         if watchtower_id:
             wt_service_name = "watchtower-service"
-            wt_port = int(os.environ.get("WATCHTOWER_AUTH_PORT", "5000"))
+            wt_port = int(os.environ.get("WATCHTOWER_AUTH_PORT", "8080"))
             self._send_token_to_service(
                 wt_service_name, wt_port, auth_payload, "Watchtower",
                 endpoint="/api/IDSConnector/Watchtower/configauth"

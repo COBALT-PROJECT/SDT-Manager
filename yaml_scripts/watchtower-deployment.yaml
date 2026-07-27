@@ -22,7 +22,7 @@ spec:
         image: docker.io/library/certify:latest #docker.io/library/nginx:trixie-perl
         imagePullPolicy: Never
         ports:
-        - containerPort: 5000
+        - containerPort: 8080
           name: http
           protocol: TCP
         - containerPort: 50051
