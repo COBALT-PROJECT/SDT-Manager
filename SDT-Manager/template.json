@@ -15,9 +15,10 @@
       "endpoint": "http://${CLOUDITOR_IP}:${CLOUDITOR_PORT}/v1/assessment/evidences",
       "auth": {
         "type": "oauth2",
-        "token_url": "http://${CLOUDITOR_IP}:${CLOUDITOR_AUTH_PORT}/v1/auth/token",
-        "client_id": "clouditor",
-        "client_secret_env": "CLOUDITOR_SECRET"
+        "token_url": "http://iam.cobalt.local:3100/oauth/token",
+        "client_id": "sdt",
+        "client_secret_env": "IAM_CLIENT_SECRET",
+        "scope": "digital_twins profile"
       },
 
       "evidence": {

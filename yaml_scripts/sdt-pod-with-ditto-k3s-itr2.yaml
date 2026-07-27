@@ -39,6 +39,8 @@ spec:
               value: "8080"
             - name: CLOUDITOR_SECRET        # OAuth2 client secret for Clouditor
               value: "clouditor"
+            - name: IAM_CLIENT_SECRET       # OAuth2 client secret for COBALT IAM (client_id "sdt")
+              value: "sd@tm"
             - name: IDS_CONNECTOR_HOST
               value: "ids-connector-sdt-service"
             - name: IDS_CONNECTOR_PORT
