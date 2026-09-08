@@ -1,4 +1,5 @@
 # File: sdt_lifecycle_manager.py
+import os
 import subprocess
 import time
 import logging
@@ -6,7 +7,7 @@ import uuid
 import re
 from typing import Dict, Optional, List
 
-YAML_PATH = "/home/sdtm/SDTM/SDT-Manager/yaml_scripts/"
+YAML_PATH = os.environ.get("YAML_PATH", "/app/yaml_scripts/")
 LOGGER = logging.getLogger(__name__)
 
 class SDT_LifeCycleManager:

@@ -1,0 +1,385 @@
+# SDT-Manager Kubernetes deployment manifest
+# Includes: ServiceAccount, RBAC, ConfigMap, Secret, YAML-scripts ConfigMap,
+#           PVC, Deployment, and Service — all in one file.
+#
+# Build the image first (from SDT-Manager/SDT-Manager/):
+#   docker build -t sdt-manager:latest .
+#   sudo k3s ctr images import <(docker save sdt-manager:latest)
+#
+# Apply:
+#   kubectl apply -f yaml_scripts/sdt-manager-k8s.yaml
+#
+# Verify:
+#   kubectl get pods -l app=sdt-manager
+#   kubectl logs -l app=sdt-manager -f
+
+# ============================================================
+# 1. ServiceAccount
+# ============================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sdt-manager-sa
+  namespace: default
+---
+# ============================================================
+# 2. ClusterRole — permissions kubectl needs to manage SDT,
+#    Watchtower, and IDS-connector pods from inside the pod
+# ============================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sdt-manager-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "persistentvolumeclaims", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+---
+# ============================================================
+# 3. ClusterRoleBinding
+# ============================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sdt-manager-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: sdt-manager-sa
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: sdt-manager-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# ============================================================
+# 4. ConfigMap — non-sensitive configuration
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sdt-manager-configmap
+  namespace: default
+data:
+  # SDT service reachable inside the cluster via its ClusterIP service name
+  SDT_INTERFACE_HOST: "sdt-service"
+  SDT_INTERFACE_PORT: "8000"
+  API_SERVER_HOST: "0.0.0.0"
+  API_SERVER_PORT: "8008"
+  # Paths inside the container (yaml-scripts volume + data PVC)
+  YAML_PATH: "/app/yaml_scripts/"
+  IDS_YAML_BASE_PATH: "/app/kubernetes/"
+  CREDENTIAL_DB_PATH: "/app/data/sdt_credentials.db"
+  LOG_LEVEL: "INFO"
+  # Component auth ports
+  SDT_AUTH_PORT: "8000"
+  IDS_SDT_AUTH_PORT: "8004"
+  WATCHTOWER_AUTH_PORT: "8080"
+  # Identity / wallet endpoints
+  AM_BASE_URL: "http://iam.cobalt.local:3100"
+  WALLET_CONTROLLER_URL: "http://iam.cobalt.local:3200"
+  # CCMLedger — set to "true" when ledger is reachable
+  CCMLEDGER_HOST: "cobalt-dlt.cobalt.local"
+  CCMLEDGER_PORT: "3000"
+  CCMLEDGER_SBOM_PATH: "/v1/manufacturer/SBOM"
+  CCMLEDGER_ENABLED: "false"
+---
+# ============================================================
+# 5. Secret — sensitive credentials
+# ============================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sdt-manager-secret
+  namespace: default
+type: Opaque
+stringData:
+  WALLET_CONTROLLER_KEY: "atestkeytoremotelycontrolthewallet"
+  DIGITAL_TWIN_API_KEY: "IvPBXYOesvseJQ3u0mwLPFgvN3Ugy2-P35aW2WlSUvQ"
+---
+# ============================================================
+# 6. ConfigMap — Kubernetes YAML manifests that SDT-Manager
+#    deploys via kubectl apply (SDT pod/service, Watchtower)
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sdt-manager-yaml-scripts
+  namespace: default
+data:
+  sdt-pod-with-ditto-k3s-itr2.yaml: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: sdt-deployment
+      namespace: default
+      labels:
+        app: sdt
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: sdt
+      template:
+        metadata:
+          labels:
+            app: sdt
+        spec:
+          nodeSelector:
+            kubernetes.io/hostname: sdtm
+          containers:
+            - name: sdt-container
+              image: docker.io/arq101/sdt-main-image:0.2.8
+              imagePullPolicy: Never
+              ports:
+                - containerPort: 8000
+                - containerPort: 1883
+              env:
+                - name: DITTO_HOST
+                  value: "ditto"
+                - name: DITTO_PORT
+                  value: "80"
+                - name: MQTT_BROKER_HOST
+                  value: "sdt-service"
+                - name: MQTT_BROKER_PORT
+                  value: "1883"
+                - name: CLOUDITOR_IP
+                  value: "10.163.1.127"
+                - name: CLOUDITOR_PORT
+                  value: "8083"
+                - name: CLOUDITOR_AUTH_PORT
+                  value: "8080"
+                - name: CLOUDITOR_SECRET
+                  value: "clouditor"
+                - name: IDS_CONNECTOR_HOST
+                  value: "ids-connector-sdt-service"
+                - name: IDS_CONNECTOR_PORT
+                  value: "8004"
+              volumeMounts:
+                - name: sdt-output
+                  mountPath: /app/sdt_output
+          volumes:
+            - name: sdt-output
+              emptyDir: {}
+          restartPolicy: Always
+
+  sdt-service.yaml: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: sdt-service
+      namespace: default
+    spec:
+      type: NodePort
+      selector:
+        app: sdt
+      ports:
+        - name: http
+          protocol: TCP
+          port: 8000
+          targetPort: 8000
+          nodePort: 30008
+        - name: mqtt
+          protocol: TCP
+          port: 1883
+          targetPort: 1883
+          nodePort: 30009
+
+  watchtower-deployment.yaml: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: watchtower-deployment
+      labels:
+        app: watchtower
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: watchtower
+      template:
+        metadata:
+          labels:
+            app: watchtower
+        spec:
+          nodeSelector:
+            kubernetes.io/hostname: watchtower
+          containers:
+          - name: watchtower
+            image: docker.io/library/certify:latest
+            imagePullPolicy: Never
+            ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+            - containerPort: 50051
+              name: grpc
+              protocol: TCP
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "2048Mi"
+                cpu: "500m"
+          restartPolicy: Always
+
+  watchtower-service.yaml: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: watchtower-service
+      labels:
+        app: watchtower
+    spec:
+      type: NodePort
+      selector:
+        app: watchtower
+      ports:
+      - name: http
+        protocol: TCP
+        port: 8080
+        targetPort: 8080
+      - name: grpc
+        protocol: TCP
+        port: 50051
+        targetPort: 50051
+      sessionAffinity: None
+---
+# ============================================================
+# 7. PersistentVolumeClaim — SQLite credential store
+#    (local-path provisioner, the k3s default)
+# ============================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sdt-manager-data-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Mi
+---
+# ============================================================
+# 8. Deployment
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdt-manager-deployment
+  namespace: default
+  labels:
+    app: sdt-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sdt-manager
+  template:
+    metadata:
+      labels:
+        app: sdt-manager
+    spec:
+      serviceAccountName: sdt-manager-sa
+      nodeSelector:
+        kubernetes.io/hostname: sdtm
+      # fsGroup 1000 matches the 'sdtm' user in the Dockerfile so the
+      # PVC mount is writable without running as root
+      securityContext:
+        fsGroup: 1000
+      containers:
+      - name: sdt-manager
+        image: docker.io/library/sdt-manager:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8008
+          protocol: TCP
+          name: http
+        # Inject all non-sensitive config from the ConfigMap at once
+        envFrom:
+        - configMapRef:
+            name: sdt-manager-configmap
+        # Layer sensitive credentials on top from the Secret
+        env:
+        - name: WALLET_CONTROLLER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: sdt-manager-secret
+              key: WALLET_CONTROLLER_KEY
+        - name: DIGITAL_TWIN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: sdt-manager-secret
+              key: DIGITAL_TWIN_API_KEY
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        - name: yaml-scripts
+          mountPath: /app/yaml_scripts
+        - name: ids-kubernetes
+          mountPath: /app/kubernetes
+          readOnly: true
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8008
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8008
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: sdt-manager-data-pvc
+      - name: yaml-scripts
+        configMap:
+          name: sdt-manager-yaml-scripts
+      - name: ids-kubernetes
+        hostPath:
+          path: /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT
+          type: Directory
+      restartPolicy: Always
+---
+# ============================================================
+# 9. Service — NodePort 30010 for external API access
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdt-manager-service
+  namespace: default
+spec:
+  type: NodePort
+  selector:
+    app: sdt-manager
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8008
+    targetPort: 8008
+    nodePort: 30010

@@ -2,22 +2,26 @@
 
 ## Overview
 
-The **SDT-Manager** is responsible for managing the lifecycle of the Security Digital Twin (SDT) and IDS connectors, which are deployed as pods in a Kubernetes cluster of Eclipse Ditto. It's primary function is to orchestrate the information flow between the SDT components and the CCM Manager.
+The **SDT-Manager** is responsible for managing the lifecycle of the Security Digital Twin (SDT) and IDS connectors, which are deployed as pods in a Kubernetes cluster of Eclipse Ditto. Its primary function is to orchestrate the information flow between the SDT components and the CCM Manager.
 
 This version of the SDT Manager includes scripts and manifests for:
 
-- Lifecycle management of SDT pods in a ditto kubernetes cluster
-- Verifying container execution independently (Docker)
+- Lifecycle management of SDT pods in a Ditto Kubernetes cluster
+- Lifecycle management of Watchtower pods
+- Wallet-driven OAuth2 authentication and SQLite-backed credential storage
+- Verifying container execution independently (Docker Compose)
+- Deployment as a pod inside the same k3s cluster it manages
 - Managing the SDT deployment alongside Eclipse Ditto
-- Managing the lifecycle of IDS connector pods in the same namespace of ditto and SDT pods.
+- Managing the lifecycle of IDS connector pods in the same namespace as Ditto and SDT pods
 
 ## Table of Contents
 
+- [Repository structure](#repository-structure)
 - [Installation](#installation)
   - [Prerequisites](#prerequisites)
   - [Environment Setup](#environment-setup)
 - [Usage](#usage)
-  - [SDT Manager Deployment](#sdt-manager-deployment)
+  - [Running locally (virtual environment)](#running-locally-virtual-environment)
 - [Features](#features)
   - [API endpoint reference](#api-endpoint-reference)
   - [SDT pod lifecycle management](#sdt-pod-lifecycle-management)
@@ -27,8 +31,51 @@ This version of the SDT Manager includes scripts and manifests for:
   - [SDT adapter APIs](#sdt-adapter-apis)
   - [CCMLedger forwarding](#ccmledger-forwarding)
 - [Containerization](#containerization)
-  - [SDT Manager containerized deployment and lifecycle management](#deployment)
+  - [Docker Compose (standalone)](#docker-compose-standalone)
+  - [Kubernetes pod deployment](#kubernetes-pod-deployment)
+  - [Deleting the pod](#deleting-the-pod)
+  - [Kubernetes resource reference](#kubernetes-resource-reference)
+  - [Port reference](#port-reference)
 
+---
+
+## Repository structure
+
+```
+SDT-Manager/
+├── SDT-Manager/                   # Application source code
+│   ├── main.py                    # Entry point
+│   ├── sdt_manager_core.py        # Core orchestrator
+│   ├── sdt_manager_interface.py   # FastAPI NBI (port 8008)
+│   ├── sdt_lifecycle_manager.py   # SDT pod lifecycle via kubectl
+│   ├── sdt_connector_manager.py   # IDS connector lifecycle
+│   ├── ids_connector.py           # IDS connector kubectl operations
+│   ├── watchtower_manager.py      # Watchtower lifecycle via kubectl
+│   ├── sdt_authentication_manager.py  # Wallet registration + OAuth2
+│   ├── sdt_credential_store.py    # SQLite credential store
+│   ├── adapter_all_v2.py          # CycloneDX -> DT Thing adapter (v2)
+│   ├── template.json              # Evidence collector routing config
+│   ├── requirements.txt           # Python dependencies
+│   ├── .env                       # Local environment configuration
+│   ├── Dockerfile                 # Container image definition
+│   ├── docker-compose.yml         # Standalone Docker Compose deployment
+│   ├── deploy.sh                  # Build image + deploy to k3s cluster
+│   ├── delete.sh                  # Tear down pod and all k8s resources
+│   └── build.sh                   # Build image and import into k3s only
+├── yaml_scripts/                  # Kubernetes manifests
+│   ├── sdt-manager-k8s.yaml       # Full SDT-Manager k8s deployment
+│   ├── sdt-pod-with-ditto-k3s-itr2.yaml  # SDT pod deployment
+│   ├── sdt-service.yaml           # SDT NodePort service
+│   ├── watchtower-deployment.yaml # Watchtower deployment
+│   └── watchtower-service.yaml    # Watchtower service
+├── ids-sync-service/              # IDS provider-consumer sync service
+├── tests/                         # Unit tests
+├── timestamps_component/          # Performance tracking variant
+├── SDTM.yaml                      # OpenAPI 3.0 specification (v2.0.0)
+└── README.md
+```
+
+---
 
 ## Installation
 
@@ -36,58 +83,50 @@ This version of the SDT Manager includes scripts and manifests for:
 
 - Ubuntu 22.04 LTS or later
 - Docker and Docker Compose
-Execute the commands
+
 ```bash
 sudo apt install docker.io -y
 sudo apt install docker-compose -y
 ```
+
 - Kubernetes (k3s recommended)
-Execute the command
 
 ```bash
 curl -sfL https://get.k3s.io | sh -
 
-## verify if k3s has been installed by running 
+# Verify k3s is installed
 sudo k3s kubectl get nodes
-## to confirm k3s service is up and running, run:
-sudo systemctl status k3s 
-## if it is not running, run:
+
+# Confirm k3s service is running
+sudo systemctl status k3s
+
+# Start k3s if not running
 sudo systemctl start k3s
 ```
-- Eclipse Ditto (clone from [https://github.com/eclipse-ditto/ditto](https://github.com/eclipse-ditto/ditto))
 
-Now to setup Eclipse Ditto software, follow the instructions:
-
-Run the command shown below in terminal of Ubuntu VM.
+- Eclipse Ditto (clone from https://github.com/eclipse-ditto/ditto)
 
 ```bash
 git clone https://github.com/eclipse-ditto/ditto.git
+
+# Verify pods are running
+kubectl get pods -n default
+kubectl get configmaps -n default
+kubectl get svc -n default
 ```
 
-Verify if the pods are running by executing the following commands
-
-```bash
-kubectl get pods -n=default
-kubectl get configmaps -n=default
-kubectl get svc -n=default
-```
 - IDS connector setup (TrueConnector)
-
-First clone the github repository of Trueconnector onto the system, run the following command:
 
 ```bash
 git clone https://github.com/Engineering-Research-and-Development/true-connector.git
-```
-verify if the trueconnector containers are deployed by running the command
 
-```bash
+# Verify containers are running
 sudo docker-compose up -d
 ```
-NOTE: you should a many containers and volumes get instantiated and have status 'running'.
 
-Now to run Eclipse Ditto as a set of pods in a kubernetes cluster, perform the following commands:
+Deploy Eclipse Ditto into k3s:
+
 ```bash
-# copy the file deploy_ditto.py into the 'ditto' directory
 cp deploy_ditto.py ~/ditto
 cd ~/ditto
 python3 deploy_ditto.py deploy-ditto
@@ -95,64 +134,48 @@ python3 deploy_ditto.py deploy-ditto
 
 ### Environment Setup
 
-To enable Kubernetes CLI in Python scripts, add the following line to your `.bashrc` file:
+Export the k3s kubeconfig so `kubectl` works from the shell:
 
 ```bash
-sudo nano ~/.bashrc
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+echo 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml' >> ~/.bashrc
+source ~/.bashrc
 ```
 
-To give root user ownership to kubectl, run the following commands
+Give your user ownership of the kubeconfig:
 
 ```bash
-# to find user group
-id -g (e.g: returns 1000)
-
-#to find username
-id -u (e.g: returns 1000)
-
-#change ownership to root
-
-sudo chown 1000:1000 /etc/rancher/k3s/k3s.yaml 
+sudo chown $(id -u):$(id -g) /etc/rancher/k3s/k3s.yaml
 ```
+
+---
 
 ## Usage
 
-### SDT Manager Deployment
-To SDT Manager component can be deployed by following the steps shown below:
+### Running locally (virtual environment)
 
-Step 1: Create a virtual environment for the deployment of the SDT Manager.
+Step 1: Create and activate a virtual environment.
 
 ```bash
 python3 -m venv sdtm-venv
-```
-Step 2: activate virtual environment
-
-```bash
 source sdtm-venv/bin/activate
 ```
-NOTE: to exit virtual environment
+
+Step 2: Install dependencies.
 
 ```bash
-source ~/.bashrc
-```
-Step 3: Install all python packages from the requirements.txt file.
-
-```bash
-pip install requirements.txt
+pip install -r SDT-Manager/requirements.txt
 ```
 
-NOTE: if pip is not installed in the system, run:
-```bash
-sudo apt install pip -y
-```
+Step 3: Run the application.
 
-Step 4:
-Run the SDT Manager application
 ```bash
-cd ~/SDT-Manager
+cd SDT-Manager/SDT-Manager
 python3 main.py
 ```
+
+The API server starts on `http://localhost:8008`. To exit the virtual environment run `deactivate`.
+
+---
 
 ## Features
 
@@ -160,37 +183,31 @@ python3 main.py
 
 The SDT Manager API server runs on port `8008` by default. Interactive OpenAPI documentation is available at:
 
-```text
-http://localhost:8008/docs/
 ```
-
-The base URL for the examples below is:
-
-```text
-http://localhost:8008
+http://localhost:8008/docs
 ```
 
 ### SDT pod lifecycle management
 
 Deploy an SDT instance:
 
-```text
+```
 POST /api/SDTM/digital-twin
 ```
 
-This deploys the SDT pod and service, deploys the IDS-SDT connector, discovers or deploys Watchtower, and starts the wallet/token authentication flow in a background thread. The response includes the generated `identifier`, plus `ids_connector_id`, `watchtower_id`, and `auth_status`.
+Deploys the SDT pod and service, deploys the IDS-SDT connector, discovers or deploys Watchtower, and starts the wallet/token authentication flow in a background thread. The response includes the generated `identifier`, plus `ids_connector_id`, `watchtower_id`, and `auth_status`.
 
 Delete an SDT instance:
 
-```text
+```
 DELETE /api/SDTM/digital-twin/{twinId}
 ```
 
-This deletes the SDT deployment, linked IDS-SDT connector, linked Watchtower, wallet registration, and local credential records for the SDT and linked components.
+Deletes the SDT deployment, linked IDS-SDT connector, linked Watchtower, wallet registration, and all credential records for the SDT and its linked components.
 
 Retrieve one SDT instance:
 
-```text
+```
 GET /api/SDTM/digital-twin/{twinId}
 ```
 
@@ -198,7 +215,7 @@ Returns pod state, deployment name, pod IP, node name, readiness, metadata times
 
 List current SDT deployments:
 
-```text
+```
 GET /api/SDTM/deployments
 ```
 
@@ -208,7 +225,7 @@ Returns all SDT deployments currently tracked by the running SDT Manager process
 
 Deploy an IDS connector:
 
-```text
+```
 POST /connector/deploy?connector_type=ids_sdt
 ```
 
@@ -216,7 +233,7 @@ The `connector_type` query parameter defaults to `ids_sdt`.
 
 Delete an IDS connector:
 
-```text
+```
 DELETE /connector/delete?cleanup_resources=true
 ```
 
@@ -232,13 +249,13 @@ The `cleanup_resources` query parameter defaults to `true`.
 
 List current IDS connectors:
 
-```text
+```
 GET /connectors
 ```
 
 Get one IDS connector status:
 
-```text
+```
 GET /connector/{connector_id}
 ```
 
@@ -246,7 +263,7 @@ GET /connector/{connector_id}
 
 Get authentication status for an SDT or linked component:
 
-```text
+```
 GET /api/SDTM/auth/{twinId}
 ```
 
@@ -254,17 +271,17 @@ Returns whether a token exists, current credential status, scope, timestamps, an
 
 List all credential records:
 
-```text
+```
 GET /api/SDTM/auth
 ```
 
-Returns credential metadata for SDTs and linked components. Access tokens and secrets are not included in this listing.
+Returns credential metadata for SDTs and linked components. Access tokens and secrets are not included in the listing.
 
 ### System status APIs
 
 Overall system status:
 
-```text
+```
 GET /status
 ```
 
@@ -272,33 +289,31 @@ Returns deployment counts, connector counts, Watchtower count, authentication su
 
 Health check:
 
-```text
+```
 GET /health
 ```
 
 Readiness check:
 
-```text
+```
 GET /ready
 ```
 
 ### SDT adapter APIs
 
-The adapter APIs run on the SDT Manager API server. Do not send adapter payloads directly to `localhost:30008`; port `30008` is the SDT service/controller interface. The manager adapter validates and transforms incoming artifacts, then forwards the transformed Thing payload to the SDT service `/api/SDT/create/` endpoint.
+The adapter APIs run on the SDT Manager API server. Do not send adapter payloads directly to port `30008`; that port is the SDT service/controller interface. The manager adapter validates and transforms incoming artifacts, then forwards the transformed Thing payload to the SDT service `/api/SDT/create/` endpoint.
 
 Validate, transform, and send one payload:
 
-```text
+```
 POST /api/SDTM/adapt?toeid=00000000-0000-0000-0000-000000000000&payload_type=BOMS
 ```
 
-Supported `payload_type` values are:
+Supported `payload_type` values:
 
-```text
+```
 BOMS, cyclonedx, oscal, arm, mud, muds
 ```
-
-The request body is the JSON artifact to validate and transform. The response includes validation details, conversion time, SDT forwarding status, and CCMLedger forwarding status.
 
 Example:
 
@@ -310,7 +325,7 @@ curl -X POST "http://localhost:8008/api/SDTM/adapt?payload_type=BOMS" \
 
 Process multiple files:
 
-```text
+```
 POST /api/SDTM/adapt/multiple/
 ```
 
@@ -330,37 +345,27 @@ Request body:
 
 Detect CycloneDX BOM type:
 
-```text
+```
 GET /api/SDTM/adapt/cyclonedx/detect/
 ```
 
-This endpoint expects a CycloneDX JSON payload in the request body and returns the detected BOM type and basic payload counts.
-
 Validate a CycloneDX payload without conversion:
 
-```text
+```
 GET /api/SDTM/adapt/cyclonedx/validate/?strict=false&thorough=true
 ```
 
-This endpoint expects a CycloneDX JSON payload in the request body and returns validation results without sending anything to the SDT.
-
 ### CCMLedger forwarding
 
-The SDT Manager can mirror transformed payloads to CCMLedger as a best-effort side effect after the SDT write succeeds.
+The SDT Manager mirrors transformed payloads to CCMLedger as a best-effort side effect after the SDT write succeeds.
 
-CCMLedger API documentation:
+Configured endpoint:
 
-```text
-http://cobalt-dlt.cobalt.local:3000/api-docs/
 ```
-
-Configured CCMLedger endpoint:
-
-```text
 POST /v1/manufacturer/sbom
 ```
 
-Documented request body shape:
+Request body:
 
 ```json
 {
@@ -368,53 +373,142 @@ Documented request body shape:
 }
 ```
 
-CCMLedger forwarding uses the most recent access token stored by the SDT Manager credential store. If forwarding is not needed during local testing, set `CCMLEDGER_ENABLED=false` in `SDT-Manager/.env` before starting `main.py`.
+CCMLedger forwarding uses the most recent access token stored by the credential store. To disable during local testing, set `CCMLEDGER_ENABLED=false` in `SDT-Manager/.env`.
 
 ### Provider and Consumer Pods synchronization
 
-Go to the `ids-sync-service` folder and execute `build-and-deploy.sh`. Read the `ids-sync-service/Readme.md` file for detailed information on routing between provider and consumer pods.
+See `ids-sync-service/Readme.md` for routing between provider and consumer pods. To deploy run `./ids-sync-service/build-and-deploy.sh`.
+
+---
 
 ## Containerization
 
-### deployment
+The SDT Manager can be deployed either as a standalone Docker container (for local testing) or as a pod inside the same k3s cluster it manages (production).
 
-Follow the steps to build and deploy the SDT Manager as a container:
+All source files, the `Dockerfile`, and the deployment scripts live in `SDT-Manager/SDT-Manager/`.
+
+### Docker Compose (standalone)
+
+Use this for local development and testing when you do not need the SDT-Manager to control a live cluster.
 
 ```bash
-cd ~/docker
+cd SDT-Manager/SDT-Manager
+
+# Build and start
+docker-compose up --build -d
+
+# View logs
+docker-compose logs -f
+
+# Stop and remove
+docker-compose down
 ```
 
-Run the following commands to build and deploy the SDT Manager as a container:
+The `docker-compose.yml` mounts:
+
+| Mount | Container path | Purpose |
+|-------|---------------|---------|
+| `/etc/rancher/k3s/k3s.yaml` | `/kube/k3s.yaml` (read-only) | Kubeconfig for kubectl |
+| `../yaml_scripts` | `/app/yaml_scripts` (read-only) | SDT and Watchtower manifests |
+| `/home/ubuntu/true-connector/kubernetes` | `/app/kubernetes` (read-only) | IDS connector manifests |
+| `./logs` | `/app/logs` | Persistent log files |
+| `./data` | `/app/data` | SQLite credential store |
+
+Environment variables are sourced from `.env`. Edit that file to configure endpoints before starting.
+
+### Kubernetes pod deployment
+
+The SDT-Manager is deployed as a pod in the same k3s cluster alongside Ditto, SDT, Watchtower, and the IDS connectors.
+
+**Step 1: Build the Docker image and import it into k3s.**
 
 ```bash
-# Make scripts executable
-chmod +x build-and-deploy.sh build.sh deploy.sh cleanup.sh
-
-# Build the image
-./build.sh
-
-# Deploy the container  
+cd SDT-Manager/SDT-Manager
 ./deploy.sh
-
-# Stop and cleanup (basic)
-./cleanup.sh
-
-# Stop and cleanup everything
-./cleanup.sh --all
-
-# Force cleanup without confirmation
-./cleanup.sh --all --force
 ```
-NOTE: In the docker-compose.yml file set the paths to mount the volumes of Trueconnector yaml files to enable instantiation, lifecycle management of IDS pods (consumer and provider)
 
+This single script performs all steps:
+1. Builds the Docker image (`sdt-manager:latest`)
+2. Imports the image into k3s containerd via `docker save | k3s ctr images import`
+3. Applies `yaml_scripts/sdt-manager-k8s.yaml` which creates all Kubernetes resources
+4. Waits for the deployment rollout to complete
+5. Prints pod/service status and recent logs
 
+The `--no-build` flag skips the Docker build and re-applies the manifests only (useful after editing the YAML):
 
+```bash
+./deploy.sh --no-build
+```
 
+**Step 2: Verify the pod is running.**
 
+```bash
+kubectl get pods -l app=sdt-manager
+kubectl get service sdt-manager-service
+```
 
+**Step 3: Check logs.**
 
+```bash
+kubectl logs -f deployment/sdt-manager-deployment
+```
 
+**Accessing the API:**
 
+| Access path | URL |
+|-------------|-----|
+| From within the cluster | `http://sdt-manager-service:8008` |
+| From the node (NodePort) | `http://<node-ip>:30010` |
+| Interactive docs | `http://<node-ip>:30010/docs` |
 
+### Deleting the pod
 
+```bash
+cd SDT-Manager/SDT-Manager
 
+# Prompts for confirmation before deleting
+./delete.sh
+
+# Skip the confirmation prompt
+./delete.sh --force
+```
+
+The delete script removes all nine Kubernetes resources created by `sdt-manager-k8s.yaml`, waits for the pod to terminate, and confirms that nothing remains. Note that the PVC (and the SQLite credential store it holds) is deleted as part of this operation.
+
+To redeploy after deletion:
+
+```bash
+./deploy.sh
+```
+
+### Kubernetes resource reference
+
+`yaml_scripts/sdt-manager-k8s.yaml` is a single multi-document file containing all resources:
+
+| Resource | Name | Purpose |
+|----------|------|---------|
+| ServiceAccount | `sdt-manager-sa` | Pod identity for in-cluster kubectl access |
+| ClusterRole | `sdt-manager-role` | Permissions to manage pods, deployments, services, PVCs, configmaps, secrets |
+| ClusterRoleBinding | `sdt-manager-rolebinding` | Binds the role to the service account |
+| ConfigMap | `sdt-manager-configmap` | All non-sensitive environment variables |
+| Secret | `sdt-manager-secret` | `WALLET_CONTROLLER_KEY` and `DIGITAL_TWIN_API_KEY` |
+| ConfigMap | `sdt-manager-yaml-scripts` | SDT, Watchtower YAML manifests — mounted at `/app/yaml_scripts/` |
+| hostPath volume | `ids-kubernetes` | IDS connector YAML manifests from host at `/home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/` — mounted read-only at `/app/kubernetes/` |
+| PersistentVolumeClaim | `sdt-manager-data-pvc` | 200 Mi volume for `sdt_credentials.db` |
+| Deployment | `sdt-manager-deployment` | The SDT-Manager pod |
+| Service | `sdt-manager-service` | NodePort 30010 → port 8008 |
+
+The pod uses `imagePullPolicy: Never` because the image is built locally and imported directly into k3s containerd (not pushed to a registry). The `securityContext.fsGroup: 1000` ensures the PVC is writable by the non-root `sdtm` user inside the container.
+
+kubectl inside the pod authenticates to the Kubernetes API using the service account token that k3s auto-mounts at `/var/run/secrets/kubernetes.io/serviceaccount/`. No `KUBECONFIG` environment variable is needed.
+
+### Port reference
+
+| Component | Port | NodePort | Protocol |
+|-----------|------|----------|---------|
+| SDT API | 8000 | 30008 | HTTP |
+| SDT MQTT | 1883 | 30009 | MQTT |
+| SDT-Manager API | 8008 | 30010 | HTTP |
+| IDS-SDT Connector | 8004 | — (ClusterIP) | HTTP |
+| Watchtower HTTP | 8080 | auto-assigned | HTTP |
+| Watchtower gRPC | 50051 | auto-assigned | gRPC |

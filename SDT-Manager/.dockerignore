@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+
+# Runtime artifacts — never bake into the image
+sdt_credentials.db
+sdt_manager.log
+*.log
+logs/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# Docker meta
+Dockerfile
+docker-compose*.yml
+.dockerignore
