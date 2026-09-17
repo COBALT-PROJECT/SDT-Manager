@@ -16,7 +16,7 @@
       "auth": {
         "type": "oauth2",
         "token_url": "http://iam.cobalt.local:3100/oauth/token",
-        "client_id": "sdt",
+        "client_id": "${IAM_CLIENT_ID}",
         "client_secret_env": "IAM_CLIENT_SECRET",
         "scope": "digital_twins profile"
       },
