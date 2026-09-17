@@ -8,7 +8,7 @@ import re
 from typing import Dict, Optional, List, Tuple
 
 # Base path for IDS connector YAML files
-IDS_YAML_BASE_PATH = "/home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/" #set absolute path to where the yaml files needed to instantiate ids-connector-sdt pods
+IDS_YAML_BASE_PATH = os.environ.get("IDS_YAML_BASE_PATH", "/home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/")
 
 # IDS Connector configuration files
 IDS_CONFIG_FILES = {
@@ -61,7 +61,7 @@ class IDS_Connector:
         """Apply a single configuration file from local path"""
         file_path = f"{self.yaml_base_path}{config_file}"
         LOGGER.info(f"Applying {config_file} from {file_path}")
-        command = f"kubectl apply -f {file_path}"
+        command = f"sed '/^\\s*uid:/d;/^\\s*resourceVersion:/d;/^\\s*creationTimestamp: \"/d' '{file_path}' | kubectl apply -f -"
         result = self.run_command(command)
         
         if result is not None:

@@ -356,7 +356,7 @@ class SDT_Manager_Interface:
             summary="Deploy an SDT instance",
             tags=["SDT deployment APIs"],
         )
-        async def deploy_sdt():
+        def deploy_sdt():
             """
             Deploy an SDT pod and service, then automatically:
               1. Deploy IDS-SDT connector
