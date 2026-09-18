@@ -987,18 +987,19 @@ class SDT_Manager_Interface:
 
                 LOGGER.info("Sending to controller...")
                 start_time = time.time()
-                access_token = self.manager_core.credential_store.get_most_recent_access_token()
+                # DLT/CCMLedger forwarding removed.
+                # access_token = self.manager_core.credential_store.get_most_recent_access_token()
                 controller_result = adapter.send_to_controller(
                     converted,
                     toeid,
                     payload_type,
-                    access_token=access_token,
+                    # access_token=access_token,
                 )
                 controller_time = time.time() - start_time
                 LOGGER.info(f"Request completed in {controller_time:.2f} seconds")
 
                 sdt_response = controller_result.get("sdt_response") if controller_result else None
-                ccmledger_result = controller_result.get("ccmledger") if controller_result else None
+                # ccmledger_result = controller_result.get("ccmledger") if controller_result else None
 
                 if sdt_response is not None and hasattr(sdt_response, "text"):
                     LOGGER.info(f"Response from controller: {sdt_response.text[:200]}...")
@@ -1015,7 +1016,7 @@ class SDT_Manager_Interface:
                         "success": sdt_response is not None and getattr(sdt_response, "status_code", 500) < 400,
                         "status_code": getattr(sdt_response, "status_code", None),
                     },
-                    "ccmledger": ccmledger_result,
+                    # "ccmledger": ccmledger_result,
                 })
 
             except Exception as e:
@@ -1042,7 +1043,8 @@ class SDT_Manager_Interface:
 
                 results = []
                 controller_start = time.time()
-                access_token = self.manager_core.credential_store.get_most_recent_access_token()
+                # DLT/CCMLedger forwarding removed.
+                # access_token = self.manager_core.credential_store.get_most_recent_access_token()
 
                 for file_path, thing in things.items():
                     try:
@@ -1055,17 +1057,17 @@ class SDT_Manager_Interface:
                                 thing,
                                 toeid=thing_id,
                                 payload_type=payload_type_value,
-                                access_token=access_token,
+                                # access_token=access_token,
                             )
                         else:
                             controller_result = adapter.send_to_controller(
                                 thing,
                                 payload_type=payload_type_value,
-                                access_token=access_token,
+                                # access_token=access_token,
                             )
 
                         sdt_response = controller_result.get("sdt_response") if controller_result else None
-                        ccmledger_result = controller_result.get("ccmledger") if controller_result else None
+                        # ccmledger_result = controller_result.get("ccmledger") if controller_result else None
 
                         results.append({
                             "status": "success" if sdt_response is not None and getattr(sdt_response, "status_code", 500) < 400 else "failed",
@@ -1073,7 +1075,7 @@ class SDT_Manager_Interface:
                             "payload_type": payload_type_value,
                             "source_type": thing.get("attributes", {}).get("sourceType"),
                             "response_status": getattr(sdt_response, "status_code", None),
-                            "ccmledger": ccmledger_result,
+                            # "ccmledger": ccmledger_result,
                         })
                     except Exception as e:
                         results.append({
