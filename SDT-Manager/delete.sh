@@ -68,6 +68,7 @@ echo "  Deployment:          sdt-manager-deployment"
 echo "  Service:             sdt-manager-service"
 echo "  PVC:                 sdt-manager-data-pvc"
 echo "  ConfigMap:           sdt-manager-configmap"
+echo "  ConfigMap:           sdt-manager-mqtt-config"
 echo "  ConfigMap:           sdt-manager-yaml-scripts"
 echo "  Secret:              sdt-manager-secret"
 echo "  ClusterRoleBinding:  sdt-manager-rolebinding"
@@ -97,6 +98,8 @@ echo ""
 info "Step 1/3 -- Deleting Kubernetes resources..."
 kubectl delete -f "${SCRIPT_DIR}/${MANIFEST}" -n "${NAMESPACE}" --ignore-not-found=true \
     || error "kubectl delete failed."
+kubectl delete configmap sdt-manager-mqtt-config -n "${NAMESPACE}" --ignore-not-found=true \
+    || error "Failed to delete MQTT ConfigMap."
 success "Resources deleted."
 echo ""
 

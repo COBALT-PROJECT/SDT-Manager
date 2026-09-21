@@ -39,10 +39,22 @@ spec:
               value: "8080"
             - name: CLOUDITOR_SECRET        # OAuth2 client secret for Clouditor
               value: "clouditor"
+            - name: IAM_CLIENT_ID           # OAuth2 client_id for COBALT IAM
+              value: "sdt"
+            - name: IAM_CLIENT_SECRET       # OAuth2 client secret for COBALT IAM (client_id "sdt")
+              value: "sd@tm"
             - name: IDS_CONNECTOR_HOST
               value: "ids-connector-sdt-service"
             - name: IDS_CONNECTOR_PORT
               value: "8004"
+            - name: COMPONENT_ID            # Faultline component identifier
+              value: "SDT"
+            - name: FAULTLINE_ENABLED       # keep false until port 1883 is confirmed open on FAULTLINE_MQTT_HOST
+              value: "false"
+            - name: FAULTLINE_MQTT_HOST
+              value: "10.163.1.161"
+            - name: FAULTLINE_MQTT_PORT
+              value: "1883"
           volumeMounts:
             - name: sdt-output
               mountPath: /app/sdt_output

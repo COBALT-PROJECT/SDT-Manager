@@ -18,97 +18,98 @@ except Exception:  # pragma: no cover - optional dependency fallback
 SDT_INTERFACE_HOST = os.environ.get("SDT_INTERFACE_HOST", "localhost")
 SDT_INTERFACE_PORT = os.environ.get("SDT_INTERFACE_PORT", "30008")
 
-CCMLEDGER_HOST = os.environ.get("CCMLEDGER_HOST", "cobalt-dlt.cobalt.local")
-CCMLEDGER_PORT = os.environ.get("CCMLEDGER_PORT", "3000")
-CCMLEDGER_SBOM_PATH = os.environ.get("CCMLEDGER_SBOM_PATH", "/v1/manufacturer/sbom")
-CCMLEDGER_ENABLED = os.environ.get("CCMLEDGER_ENABLED", "true").lower() in ("1", "true", "yes")
-
-
-def _ccmledger_result(attempted, success, reason, status_code=None, detail=None):
-    return {
-        "attempted": attempted,
-        "success": success,
-        "reason": reason,
-        "status_code": status_code,
-        "detail": detail,
-    }
-
-
-def _forward_to_ccmledger(payload, params=None, access_token=None):
-    """Mirror the outbound SDT payload to CCMLedger as a best-effort side effect."""
-    logger = logging.getLogger(__name__)
-    if not CCMLEDGER_ENABLED:
-        return _ccmledger_result(
-            attempted=False,
-            success=False,
-            reason="disabled",
-        )
-
-    url = f"http://{CCMLEDGER_HOST}:{CCMLEDGER_PORT}{CCMLEDGER_SBOM_PATH}"
-    headers = {
-        "Content-Type": "application/json",
-        "X-Correlation-Id": str(int(time.time() * 1000)),
-        "X-Forwarded-From": "sdt-manager",
-    }
-    if access_token:
-        headers["Authorization"] = f"Bearer {access_token}"
-    else:
-        logger.warning("No Identity Manager access token found in SQLite; skipping CCMLedger forwarding")
-        return _ccmledger_result(
-            attempted=False,
-            success=False,
-            reason="missing_token",
-            detail="No Identity Manager access token found in SQLite",
-        )
-
-    ledger_payload = {"content": json.dumps(payload)}
-
-    try:
-        logger.info("Forwarding payload to CCMLedger at %s", url)
-        response = requests.post(
-            url,
-            data=json.dumps(ledger_payload),
-            params=params or {},
-            headers=headers,
-            timeout=30,
-        )
-        if response.status_code >= 400:
-            logger.error(
-                "CCMLedger forwarding failed: status=%s body=%s",
-                response.status_code,
-                response.text[:500],
-            )
-            return _ccmledger_result(
-                attempted=True,
-                success=False,
-                reason="http_error",
-                status_code=response.status_code,
-                detail=response.text[:500],
-            )
-        else:
-            logger.info("CCMLedger forwarding succeeded: status=%s", response.status_code)
-            return _ccmledger_result(
-                attempted=True,
-                success=True,
-                reason="success",
-                status_code=response.status_code,
-            )
-    except requests.exceptions.RequestException as exc:
-        logger.error("CCMLedger forwarding error: %s", exc)
-        return _ccmledger_result(
-            attempted=True,
-            success=False,
-            reason="request_exception",
-            detail=str(exc),
-        )
-    except Exception as exc:
-        logger.error("Unexpected CCMLedger forwarding error: %s", exc)
-        return _ccmledger_result(
-            attempted=True,
-            success=False,
-            reason="unexpected_exception",
-            detail=str(exc),
-        )
+# DLT/CCMLedger runtime workflow disabled; former implementation retained below as comments.
+# CCMLEDGER_HOST = os.environ.get("CCMLEDGER_HOST", "cobalt-dlt.cobalt.local")
+# CCMLEDGER_PORT = os.environ.get("CCMLEDGER_PORT", "3000")
+# CCMLEDGER_SBOM_PATH = os.environ.get("CCMLEDGER_SBOM_PATH", "/v1/manufacturer/sbom")
+# CCMLEDGER_ENABLED = os.environ.get("CCMLEDGER_ENABLED", "true").lower() in ("1", "true", "yes")
+#
+#
+# def _ccmledger_result(attempted, success, reason, status_code=None, detail=None):
+#     return {
+#         "attempted": attempted,
+#         "success": success,
+#         "reason": reason,
+#         "status_code": status_code,
+#         "detail": detail,
+#     }
+#
+#
+# def _forward_to_ccmledger(payload, params=None, access_token=None):
+#     """Mirror the outbound SDT payload to CCMLedger as a best-effort side effect."""
+#     logger = logging.getLogger(__name__)
+#     if not CCMLEDGER_ENABLED:
+#         return _ccmledger_result(
+#             attempted=False,
+#             success=False,
+#             reason="disabled",
+#         )
+#
+#     url = f"http://{CCMLEDGER_HOST}:{CCMLEDGER_PORT}{CCMLEDGER_SBOM_PATH}"
+#     headers = {
+#         "Content-Type": "application/json",
+#         "X-Correlation-Id": str(int(time.time() * 1000)),
+#         "X-Forwarded-From": "sdt-manager",
+#     }
+#     if access_token:
+#         headers["Authorization"] = f"Bearer {access_token}"
+#     else:
+#         logger.warning("No Identity Manager access token found in SQLite; skipping CCMLedger forwarding")
+#         return _ccmledger_result(
+#             attempted=False,
+#             success=False,
+#             reason="missing_token",
+#             detail="No Identity Manager access token found in SQLite",
+#         )
+#
+#     ledger_payload = {"content": json.dumps(payload)}
+#
+#     try:
+#         logger.info("Forwarding payload to CCMLedger at %s", url)
+#         response = requests.post(
+#             url,
+#             data=json.dumps(ledger_payload),
+#             params=params or {},
+#             headers=headers,
+#             timeout=30,
+#         )
+#         if response.status_code >= 400:
+#             logger.error(
+#                 "CCMLedger forwarding failed: status=%s body=%s",
+#                 response.status_code,
+#                 response.text[:500],
+#             )
+#             return _ccmledger_result(
+#                 attempted=True,
+#                 success=False,
+#                 reason="http_error",
+#                 status_code=response.status_code,
+#                 detail=response.text[:500],
+#             )
+#         else:
+#             logger.info("CCMLedger forwarding succeeded: status=%s", response.status_code)
+#             return _ccmledger_result(
+#                 attempted=True,
+#                 success=True,
+#                 reason="success",
+#                 status_code=response.status_code,
+#             )
+#     except requests.exceptions.RequestException as exc:
+#         logger.error("CCMLedger forwarding error: %s", exc)
+#         return _ccmledger_result(
+#             attempted=True,
+#             success=False,
+#             reason="request_exception",
+#             detail=str(exc),
+#         )
+#     except Exception as exc:
+#         logger.error("Unexpected CCMLedger forwarding error: %s", exc)
+#         return _ccmledger_result(
+#             attempted=True,
+#             success=False,
+#             reason="unexpected_exception",
+#             detail=str(exc),
+#         )
 
 
 @dataclass
@@ -238,8 +239,9 @@ class DTModelAdapterV2:
             )
         return spec.transformer(payload)
 
-    def send_to_controller(self, payload, toeid="123456789", payload_type="BOMS", access_token=None):
-        """Send payload to SDT first, then mirror to CCMLedger after SDT confirms success."""
+    # def send_to_controller(self, payload, toeid="123456789", payload_type="BOMS", access_token=None):  # DLT forwarding removed
+    def send_to_controller(self, payload, toeid="123456789", payload_type="BOMS"):
+        """Send payload to the SDT controller."""
         logger = logging.getLogger(__name__)
         url = f"http://{SDT_INTERFACE_HOST}:{SDT_INTERFACE_PORT}/api/SDT/create/"
         params = {"toe_id": toeid, "category": payload_type, "appmap": "true"}
@@ -248,12 +250,12 @@ class DTModelAdapterV2:
             logger.error("Invalid payload type: expected dict, got %s", type(payload).__name__)
             return {
                 "sdt_response": None,
-                "ccmledger": _ccmledger_result(
-                    attempted=False,
-                    success=False,
-                    reason="invalid_payload",
-                    detail=f"expected dict, got {type(payload).__name__}",
-                ),
+#                 "ccmledger": _ccmledger_result(
+#                     attempted=False,
+#                     success=False,
+#                     reason="invalid_payload",
+#                     detail=f"expected dict, got {type(payload).__name__}",
+#                 ),
             }
 
         error_detail = None
@@ -273,28 +275,28 @@ class DTModelAdapterV2:
             response.raise_for_status()
             logger.info("SDT write confirmed with status code %s", response.status_code)
 
-            logger.info("Forwarding payload to CCMLedger with params %s", params)
-            ccmledger_result = _forward_to_ccmledger(
-                payload,
-                params=params,
-                access_token=access_token,
-            )
+#             logger.info("Forwarding payload to CCMLedger with params %s", params)
+#             ccmledger_result = _forward_to_ccmledger(
+#                 payload,
+#                 params=params,
+#                 access_token=access_token,
+#             )
 
             return {
                 "sdt_response": response,
-                "ccmledger": ccmledger_result,
+#                 "ccmledger": ccmledger_result,
             }
         except requests.exceptions.HTTPError as exc:
             logger.error("HTTP error occurred: %s, status code: %s", exc, exc.response.status_code)
             return {
                 "sdt_response": exc.response,
-                "ccmledger": _ccmledger_result(
-                    attempted=False,
-                    success=False,
-                    reason="sdt_http_error",
-                    status_code=exc.response.status_code if exc.response is not None else None,
-                    detail=exc.response.text[:500] if exc.response is not None else str(exc),
-                ),
+#                 "ccmledger": _ccmledger_result(
+#                     attempted=False,
+#                     success=False,
+#                     reason="sdt_http_error",
+#                     status_code=exc.response.status_code if exc.response is not None else None,
+#                     detail=exc.response.text[:500] if exc.response is not None else str(exc),
+#                 ),
             }
         except requests.exceptions.ConnectionError as exc:
             logger.error("Connection error occurred: %s", exc)
@@ -310,12 +312,12 @@ class DTModelAdapterV2:
             error_detail = str(exc)
         return {
             "sdt_response": None,
-            "ccmledger": _ccmledger_result(
-                attempted=False,
-                success=False,
-                reason="sdt_request_exception",
-                detail=error_detail,
-            ),
+#             "ccmledger": _ccmledger_result(
+#                 attempted=False,
+#                 success=False,
+#                 reason="sdt_request_exception",
+#                 detail=error_detail,
+#             ),
         }
 
     def validate_and_transform(

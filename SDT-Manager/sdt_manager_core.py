@@ -9,6 +9,7 @@ from sdt_manager_interface import SDT_Manager_Interface
 from sdt_credential_store import SDTCredentialStore
 from sdt_authentication_manager import SDTAuthenticationManager
 from adapter_all_v2 import DTModelAdapterV2
+from mqtt_failure_reporter import MQTTFailureReporter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -19,6 +20,10 @@ class SDT_ManagerCore:
     def __init__(self):
         """Initialize the SDT Manager Core."""
         LOGGER.info("Initializing SDT Manager Core...")
+
+        # Initialize reporting first so all API and background workflows can
+        # share the same non-blocking MQTT publisher.
+        self.failure_reporter = MQTTFailureReporter.from_env()
         
         # Get configuration from environment variables
         sdt_interface_host = os.environ.get('SDT_INTERFACE_HOST', 'localhost')
@@ -135,6 +140,9 @@ class SDT_ManagerCore:
         self.terminate_event.set()
         
         # API thread is daemon, it will terminate when main process exits
+
+        # Flush queued MQTT reports without blocking shutdown indefinitely.
+        self.failure_reporter.stop()
         
         LOGGER.info("SDT Manager stopped")
 

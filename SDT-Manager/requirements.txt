@@ -7,4 +7,5 @@ python-dotenv
 cyclonedx-python-lib
 cyclonedx-python-lib[validation]
 gitpython
+paho-mqtt
 jsonschema

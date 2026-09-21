@@ -11,6 +11,8 @@ import time
 import threading
 import os
 
+from mqtt_failure_reporter import MQTTFailureReportingMiddleware
+
 LOGGER = logging.getLogger(__name__)
 
 # Pydantic models defined outside the class to avoid linting warnings
@@ -58,6 +60,10 @@ class SDT_Manager_Interface:
             title="SDT Deployment API",
             description="API for managing SDT deployments and IDS connectors in Kubernetes",
             version="2.0.0"
+        )
+        self.app.add_middleware(
+            MQTTFailureReportingMiddleware,
+            reporter=self.manager_core.failure_reporter,
         )
         self._setup_routes()
         LOGGER.info("SDT Manager Interface initialized")
@@ -116,6 +122,17 @@ class SDT_Manager_Interface:
                     f"Auth flow failed for SDT {sdt_identifier} — "
                     "components will run without token"
                 )
+                self.manager_core.failure_reporter.report_failure(
+                    operation="Authenticate SDT deployment",
+                    message=f"Authentication flow failed for SDT {sdt_identifier}",
+                    severity="critical",
+                    details={
+                        "sdt_id": sdt_identifier,
+                        "ids_connector_id": ids_connector_id,
+                        "watchtower_id": watchtower_id,
+                        "error_category": "authentication_error",
+                    },
+                )
                 return
 
             # Credentials already stored in SQLite by register_and_get_token.
@@ -125,6 +142,16 @@ class SDT_Manager_Interface:
 
         except Exception as e:
             LOGGER.error(f"Auth flow exception for SDT {sdt_identifier}: {e}")
+            self.manager_core.failure_reporter.report_failure(
+                operation="Authenticate SDT deployment",
+                message=str(e),
+                severity="critical",
+                details={
+                    "sdt_id": sdt_identifier,
+                    "error_category": "authentication_error",
+                    "exception_type": type(e).__name__,
+                },
+            )
 
     def _distribute_token(self, sdt_identifier: str, access_token: str,
                           ids_connector_id: Optional[str],
@@ -167,32 +194,108 @@ class SDT_Manager_Interface:
                 endpoint="/api/SDT/auth/token"
             )
             if sdt_token_sent:
-                self._send_template_to_sdt(sdt_service_name, sdt_port)
+                template_sent = self._send_template_to_sdt(sdt_service_name, sdt_port)
+                if not template_sent:
+                    self.manager_core.failure_reporter.report_failure(
+                        operation="Upload SDT template",
+                        message="Template delivery to SDT failed",
+                        severity="warning",
+                        details={
+                            "sdt_id": sdt_identifier,
+                            "service": sdt_service_name,
+                            "error_category": "dependency_error_or_not_reachable",
+                        },
+                    )
+            else:
+                self._report_component_delivery_failure("SDT", sdt_service_name, sdt_identifier)
         else:
             LOGGER.warning("Could not resolve SDT service — skipping token delivery to SDT")
+            self._report_component_delivery_failure("SDT", "sdt-service", sdt_identifier)
 
         # --- IDS-SDT connector service ---
         if ids_connector_id:
             ids_service_name = self._get_ids_sdt_service_name()
             ids_port = int(os.environ.get("IDS_SDT_AUTH_PORT", "8004"))
             if ids_service_name:
-                self._send_token_to_service(
+                ids_token_sent = self._send_token_to_service(
                     ids_service_name, ids_port, auth_payload, "IDS-SDT",
                     endpoint="/api/IDSconnector/SDT/configauth"
                 )
+                if not ids_token_sent:
+                    self._report_component_delivery_failure("IDS-SDT", ids_service_name, sdt_identifier)
             else:
                 LOGGER.warning("Could not resolve IDS-SDT service — skipping token delivery")
+                self._report_component_delivery_failure("IDS-SDT", "unresolved", sdt_identifier)
 
         # --- Watchtower service ---
         if watchtower_id:
             wt_service_name = "watchtower-service"
             wt_port = int(os.environ.get("WATCHTOWER_AUTH_PORT", "8080"))
-            self._send_token_to_service(
+            watchtower_token_sent = self._send_token_to_service(
                 wt_service_name, wt_port, auth_payload, "Watchtower",
                 endpoint="/api/IDSConnector/Watchtower/configauth"
             )
 
+            if not watchtower_token_sent:
+                self._report_component_delivery_failure("Watchtower", wt_service_name, sdt_identifier)
         LOGGER.info(f"Token distribution completed for SDT {sdt_identifier}")
+
+    def _report_component_delivery_failure(self, component_label: str,
+                                           service_name: str,
+                                           sdt_identifier: str):
+        self.manager_core.failure_reporter.report_failure(
+            operation=f"Deliver credentials to {component_label}",
+            message=f"Credential delivery to {component_label} failed",
+            severity="critical",
+            details={
+                "component": component_label,
+                "service": service_name,
+                "sdt_id": sdt_identifier,
+                "error_category": "dependency_error_or_not_reachable",
+            },
+        )
+
+    def _report_downstream_failure(self, operation: str, response=None,
+                                   extra_details: Optional[dict] = None):
+        status_code = getattr(response, "status_code", None)
+        response_body = None
+
+        if response is not None:
+            try:
+                response_body = response.json()
+            except (ValueError, TypeError):
+                response_body = getattr(response, "text", "")[:2000]
+
+        if status_code is None:
+            message = "Downstream component did not return a response"
+            category = "not_reachable"
+            severity = "critical"
+        else:
+            message = f"Downstream component returned HTTP {status_code}"
+            category = {
+                400: "bad_request_or_string_mismatch",
+                401: "authentication_error",
+                403: "authorization_error",
+                404: "not_found",
+                408: "timeout",
+                502: "dependency_error",
+                503: "not_reachable",
+                504: "timeout",
+            }.get(status_code, "dependency_error")
+            severity = "critical" if status_code >= 500 or status_code in (401, 403) else "warning"
+
+        details = {
+            "status_code": status_code,
+            "error_category": category,
+            "response": response_body,
+        }
+        details.update(extra_details or {})
+        self.manager_core.failure_reporter.report_failure(
+            operation=operation,
+            message=message,
+            severity=severity,
+            details=details,
+        )
 
     def _send_token_to_service(self, service_name: str, port: int,
                                 auth_payload: dict, component_label: str,
@@ -1031,18 +1134,28 @@ class SDT_Manager_Interface:
 
                 LOGGER.info("Sending to controller...")
                 start_time = time.time()
-                access_token = self.manager_core.credential_store.get_most_recent_access_token()
+                # DLT/CCMLedger forwarding removed.
+                # access_token = self.manager_core.credential_store.get_most_recent_access_token()
                 controller_result = adapter.send_to_controller(
                     converted,
                     toeid,
                     payload_type,
-                    access_token=access_token,
+                    # access_token=access_token,
                 )
                 controller_time = time.time() - start_time
                 LOGGER.info(f"Request completed in {controller_time:.2f} seconds")
 
                 sdt_response = controller_result.get("sdt_response") if controller_result else None
-                ccmledger_result = controller_result.get("ccmledger") if controller_result else None
+                if (
+                    sdt_response is None
+                    or getattr(sdt_response, "status_code", 500) >= 400
+                ):
+                    self._report_downstream_failure(
+                        operation=f"Forward {payload_type} payload to SDT",
+                        response=sdt_response,
+                        extra_details={"payload_type": payload_type, "toe_id": toeid},
+                    )
+                # ccmledger_result = controller_result.get("ccmledger") if controller_result else None
 
                 if sdt_response is not None and hasattr(sdt_response, "text"):
                     LOGGER.info(f"Response from controller: {sdt_response.text[:200]}...")
@@ -1059,7 +1172,7 @@ class SDT_Manager_Interface:
                         "success": sdt_response is not None and getattr(sdt_response, "status_code", 500) < 400,
                         "status_code": getattr(sdt_response, "status_code", None),
                     },
-                    "ccmledger": ccmledger_result,
+                    # "ccmledger": ccmledger_result,
                 })
 
             except Exception as e:
@@ -1085,8 +1198,28 @@ class SDT_Manager_Interface:
                 processing_time = time.time() - start_time
 
                 results = []
+                for file_config in request.file_configs:
+                    if file_config.path in things:
+                        continue
+                    self.manager_core.failure_reporter.report_failure(
+                        operation=f"Validate and transform {file_config.type} file",
+                        message="File could not be validated or transformed",
+                        severity="warning",
+                        details={
+                            "file_path": file_config.path,
+                            "payload_type": file_config.type,
+                            "error_category": "invalid_data_or_processing_error",
+                        },
+                    )
+                    results.append({
+                        "status": "failed",
+                        "path": file_config.path,
+                        "payload_type": file_config.type,
+                        "error": "File could not be validated or transformed",
+                    })
                 controller_start = time.time()
-                access_token = self.manager_core.credential_store.get_most_recent_access_token()
+                # DLT/CCMLedger forwarding removed.
+                # access_token = self.manager_core.credential_store.get_most_recent_access_token()
 
                 for file_path, thing in things.items():
                     try:
@@ -1099,17 +1232,29 @@ class SDT_Manager_Interface:
                                 thing,
                                 toeid=thing_id,
                                 payload_type=payload_type_value,
-                                access_token=access_token,
+                                # access_token=access_token,
                             )
                         else:
                             controller_result = adapter.send_to_controller(
                                 thing,
                                 payload_type=payload_type_value,
-                                access_token=access_token,
+                                # access_token=access_token,
                             )
 
                         sdt_response = controller_result.get("sdt_response") if controller_result else None
-                        ccmledger_result = controller_result.get("ccmledger") if controller_result else None
+                        if (
+                            sdt_response is None
+                            or getattr(sdt_response, "status_code", 500) >= 400
+                        ):
+                            self._report_downstream_failure(
+                                operation=f"Forward {payload_type_value} file to SDT",
+                                response=sdt_response,
+                                extra_details={
+                                    "payload_type": payload_type_value,
+                                    "file_path": file_path,
+                                },
+                            )
+                        # ccmledger_result = controller_result.get("ccmledger") if controller_result else None
 
                         results.append({
                             "status": "success" if sdt_response is not None and getattr(sdt_response, "status_code", 500) < 400 else "failed",
@@ -1117,9 +1262,20 @@ class SDT_Manager_Interface:
                             "payload_type": payload_type_value,
                             "source_type": thing.get("attributes", {}).get("sourceType"),
                             "response_status": getattr(sdt_response, "status_code", None),
-                            "ccmledger": ccmledger_result,
+                            # "ccmledger": ccmledger_result,
                         })
                     except Exception as e:
+                        self.manager_core.failure_reporter.report_failure(
+                            operation=f"Process {payload_type_value} file",
+                            message=str(e),
+                            severity="warning",
+                            details={
+                                "file_path": file_path,
+                                "payload_type": payload_type_value,
+                                "error_category": "invalid_data_or_processing_error",
+                                "exception_type": type(e).__name__,
+                            },
+                        )
                         results.append({
                             "status": "failed",
                             "path": file_path,
@@ -1130,7 +1286,7 @@ class SDT_Manager_Interface:
 
                 return JSONResponse(content={
                     "message": "Multiple files processed and sent to SDT",
-                    "total_files": len(things),
+                    "total_files": len(request.file_configs),
                     "processing_time": processing_time,
                     "controller_time": controller_time,
                     "results": results,

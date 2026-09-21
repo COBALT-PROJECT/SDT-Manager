@@ -5,12 +5,13 @@
 # Usage:
 #   ./deploy.sh
 
-set -e
+set -euo pipefail
 
 DEPLOYMENT_NAME="sdt-manager-deployment"
 NAMESPACE="default"
 MANIFEST="../yaml_scripts/sdt-manager-k8s.yaml"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${SCRIPT_DIR}/.env"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -23,6 +24,11 @@ success() { echo -e "${GREEN}[OK]${NC}      $1"; }
 warn()    { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 error()   { echo -e "${RED}[ERROR]${NC}   $1"; exit 1; }
 
+env_value() {
+    local key="$1"
+    sed -n "s/^${key}=//p" "${ENV_FILE}" | tail -n 1 | tr -d '\r'
+}
+
 echo "=================================================="
 echo " SDT-Manager Pod Deployment"
 echo "=================================================="
@@ -34,6 +40,33 @@ echo ""
 command -v kubectl &>/dev/null || error "kubectl is not installed or not in PATH."
 
 [[ -f "${SCRIPT_DIR}/${MANIFEST}" ]] || error "Manifest not found at ${SCRIPT_DIR}/${MANIFEST}"
+[[ -f "${ENV_FILE}" ]] || error "Environment file not found at ${ENV_FILE}"
+
+MQTT_FAILURE_REPORTING_ENABLED="$(env_value MQTT_FAILURE_REPORTING_ENABLED)"
+MQTT_FAILURE_HOST="$(env_value MQTT_FAILURE_HOST)"
+MQTT_FAILURE_PORT="$(env_value MQTT_FAILURE_PORT)"
+MQTT_COMPONENT_ID="$(env_value MQTT_COMPONENT_ID)"
+MQTT_FAILURE_QUEUE_SIZE="$(env_value MQTT_FAILURE_QUEUE_SIZE)"
+MQTT_FAILURE_MAX_RETRIES="$(env_value MQTT_FAILURE_MAX_RETRIES)"
+MQTT_FAILURE_RETRY_DELAY="$(env_value MQTT_FAILURE_RETRY_DELAY)"
+
+[[ -n "${MQTT_FAILURE_HOST}" ]] || error "MQTT_FAILURE_HOST is missing from ${ENV_FILE}"
+[[ "${MQTT_FAILURE_PORT}" =~ ^[0-9]+$ ]] || error "MQTT_FAILURE_PORT must be numeric"
+[[ -n "${MQTT_COMPONENT_ID}" ]] || error "MQTT_COMPONENT_ID is missing from ${ENV_FILE}"
+
+info "Importing MQTT settings from ${ENV_FILE}..."
+kubectl create configmap sdt-manager-mqtt-config \
+    --namespace "${NAMESPACE}" \
+    --from-literal=MQTT_FAILURE_REPORTING_ENABLED="${MQTT_FAILURE_REPORTING_ENABLED}" \
+    --from-literal=MQTT_FAILURE_HOST="${MQTT_FAILURE_HOST}" \
+    --from-literal=MQTT_FAILURE_PORT="${MQTT_FAILURE_PORT}" \
+    --from-literal=MQTT_COMPONENT_ID="${MQTT_COMPONENT_ID}" \
+    --from-literal=MQTT_FAILURE_QUEUE_SIZE="${MQTT_FAILURE_QUEUE_SIZE}" \
+    --from-literal=MQTT_FAILURE_MAX_RETRIES="${MQTT_FAILURE_MAX_RETRIES}" \
+    --from-literal=MQTT_FAILURE_RETRY_DELAY="${MQTT_FAILURE_RETRY_DELAY}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+success "MQTT configuration imported from .env."
+echo ""
 
 # ---------------------------------------------------------------
 # Step 1: Apply manifests
