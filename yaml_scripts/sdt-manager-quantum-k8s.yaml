@@ -244,6 +244,8 @@ spec:
         envFrom:
         - configMapRef:
             name: sdt-manager-quantum-configmap
+        - configMapRef:
+            name: sdt-manager-quantum-mqtt-config
         env:
         - name: WALLET_CONTROLLER_KEY
           valueFrom:

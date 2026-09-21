@@ -282,6 +282,33 @@ Readiness check:
 GET /ready
 ```
 
+### MQTT failure reporting
+
+Every API response with a 4xx or 5xx status, every unhandled endpoint
+exception, and asynchronous authentication or downstream SDT delivery failure
+is reported to MQTT without blocking the API response.
+
+Configuration is maintained in `SDT-Manager/.env`:
+
+| Variable | Value |
+|----------|-------|
+| `MQTT_FAILURE_REPORTING_ENABLED` | `true` |
+| `MQTT_FAILURE_HOST` | `10.163.1.161` |
+| `MQTT_FAILURE_PORT` | `1883` |
+| `MQTT_COMPONENT_ID` | `sdt-manager-quantum-01` |
+| `MQTT_FAILURE_QUEUE_SIZE` | `1000` |
+| `MQTT_FAILURE_MAX_RETRIES` | `3` |
+| `MQTT_FAILURE_RETRY_DELAY` | `2` seconds |
+
+The reporter loads this `.env` file directly. For Kubernetes, `deploy.sh`
+copies only these MQTT settings into the
+`sdt-manager-quantum-mqtt-config` ConfigMap before applying the quantum
+manifest, keeping the broker address in one source file.
+
+Reports use topic `components/<component-id>/reports`, QoS 1, and are not
+retained. Broker failures are logged locally, and credential-like fields are
+redacted before publication.
+
 ### SDT adapter APIs
 
 The adapter APIs run on the SDT Manager API server. Do not send adapter payloads directly to `localhost:30008`; port `30008` is the SDT service/controller interface. The manager adapter validates and transforms incoming artifacts, then forwards the transformed Thing payload to the SDT service `/api/SDT/create/` endpoint.
