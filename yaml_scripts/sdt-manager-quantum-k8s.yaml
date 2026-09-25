@@ -163,6 +163,14 @@ data:
                   value: "ids-connector-sdt-service"
                 - name: IDS_CONNECTOR_PORT
                   value: "8004"
+                - name: COMPONENT_ID            # Faultline component identifier
+                  value: "SDT"
+                - name: FAULTLINE_ENABLED       # port 1883 on FAULTLINE_MQTT_HOST confirmed reachable
+                  value: "true"
+                - name: FAULTLINE_MQTT_HOST
+                  value: "10.163.1.161"
+                - name: FAULTLINE_MQTT_PORT
+                  value: "1883"
               volumeMounts:
                 - name: sdt-output
                   mountPath: /app/sdt_output
@@ -277,7 +285,7 @@ spec:
             path: /health
             port: 8008
           initialDelaySeconds: 30
-          periodSeconds: 18000
+          periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
@@ -285,7 +293,7 @@ spec:
             path: /ready
             port: 8008
           initialDelaySeconds: 10
-          periodSeconds: 18000
+          periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
       volumes:
