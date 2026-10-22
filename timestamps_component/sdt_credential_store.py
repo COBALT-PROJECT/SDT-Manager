@@ -242,6 +242,33 @@ class SDTCredentialStore:
         creds = self.get_credentials(sdt_id)
         return creds.get("access_token") if creds else None
 
+    def get_most_recent_access_token(self) -> Optional[str]:
+        """
+        Retrieve the newest non-empty access token in the credential store.
+
+        Rows are ordered by updated_at descending so the most recently refreshed
+        token is returned first.
+
+        Returns:
+            The most recent access token string, or None if unavailable.
+        """
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                row = conn.execute(
+                    """
+                    SELECT access_token
+                      FROM sdt_credentials
+                     WHERE access_token IS NOT NULL
+                       AND access_token != ''
+                     ORDER BY updated_at DESC
+                     LIMIT 1
+                    """
+                ).fetchone()
+                return row["access_token"] if row else None
+            finally:
+                conn.close()
+
     def delete_credentials(self, sdt_id: str) -> bool:
         """
         Remove credential data for a single component by its identifier.

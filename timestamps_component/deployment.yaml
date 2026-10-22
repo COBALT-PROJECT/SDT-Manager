@@ -1,0 +1,305 @@
+# Timestamp manager; rendered by deploy.sh. Downstream SDT/IDS names remain shared.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sdt-manager-timestamps-sa
+  namespace: default
+---
+# ============================================================
+# 2. ClusterRole
+# ============================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sdt-manager-timestamps-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "persistentvolumeclaims", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+---
+# ============================================================
+# 3. ClusterRoleBinding
+# ============================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sdt-manager-timestamps-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: sdt-manager-timestamps-sa
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: sdt-manager-timestamps-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# ============================================================
+# 4. ConfigMap — non-sensitive configuration
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sdt-manager-timestamps-configmap
+  namespace: default
+data:
+  SDT_INTERFACE_HOST: "sdt-service"
+  SDT_INTERFACE_PORT: "8000"
+  API_SERVER_HOST: "0.0.0.0"
+  API_SERVER_PORT: "8008"
+  YAML_PATH: "/app/yaml_scripts/"
+  IDS_YAML_BASE_PATH: "/app/kubernetes/"
+  # Use quantum-specific sync manifest
+  IDS_SYNC_MANIFEST: "pods_sync_k3s_quantum.yml"
+  CREDENTIAL_DB_PATH: "/app/data/sdt_credentials.db"
+  LOG_LEVEL: "INFO"
+  PERFORMANCE_LOG_PATH: "/app/data/performance_events.jsonl"
+  PERFORMANCE_MAX_RECORDS: "10000"
+  SDT_AUTH_PORT: "8000"
+  IDS_SDT_AUTH_PORT: "8004"
+  AM_BASE_URL: "http://iam.cobalt.local:3100"
+  WALLET_CONTROLLER_URL: "http://iam.cobalt.local:3200"
+  # DLT/CCMLedger workflow disabled; former configuration retained as comments.
+  # CCMLEDGER_HOST: "cobalt-dlt.cobalt.local"
+  # CCMLEDGER_PORT: "3000"
+  # CCMLEDGER_SBOM_PATH: "/v1/manufacturer/SBOM"
+  # CCMLEDGER_ENABLED: "false"
+---
+# ============================================================
+# 6. ConfigMap — Kubernetes YAML manifests SDT-Manager deploys
+#    Note: Watchtower is disabled on the quantum_sdt branch
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sdt-manager-timestamps-yaml-scripts
+  namespace: default
+data:
+  sdt-pod-with-ditto-k3s-itr2.yaml: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: sdt-deployment
+      namespace: default
+      labels:
+        app: sdt
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: sdt
+      template:
+        metadata:
+          labels:
+            app: sdt
+        spec:
+          nodeSelector:
+            kubernetes.io/hostname: sdtm
+          containers:
+            - name: sdt-container
+              image: docker.io/arq101/sdt-main-image:0.2.8
+              imagePullPolicy: Never
+              ports:
+                - containerPort: 8000
+                - containerPort: 1883
+              env:
+                - name: DITTO_HOST
+                  value: "ditto"
+                - name: DITTO_PORT
+                  value: "80"
+                - name: MQTT_BROKER_HOST
+                  value: "sdt-service"
+                - name: MQTT_BROKER_PORT
+                  value: "1883"
+                - name: CLOUDITOR_IP
+                  value: "10.163.1.127"
+                - name: CLOUDITOR_PORT
+                  value: "8083"
+                - name: CLOUDITOR_AUTH_PORT
+                  value: "8080"
+                - name: CLOUDITOR_SECRET
+                  value: "clouditor"
+                - name: IAM_CLIENT_ID           # OAuth2 client_id for COBALT IAM
+                  value: "sdt"
+                - name: IAM_CLIENT_SECRET       # OAuth2 client secret for COBALT IAM (client_id "sdt")
+                  value: "sd@tm"
+                - name: IDS_CONNECTOR_HOST
+                  value: "ids-connector-sdt-service"
+                - name: IDS_CONNECTOR_PORT
+                  value: "8004"
+                - name: COMPONENT_ID            # Faultline component identifier
+                  value: "SDT"
+                - name: FAULTLINE_ENABLED       # port 1883 on FAULTLINE_MQTT_HOST confirmed reachable
+                  value: "true"
+                - name: FAULTLINE_MQTT_HOST
+                  value: "10.163.1.161"
+                - name: FAULTLINE_MQTT_PORT
+                  value: "1883"
+              volumeMounts:
+                - name: sdt-output
+                  mountPath: /app/sdt_output
+          volumes:
+            - name: sdt-output
+              emptyDir: {}
+          restartPolicy: Always
+
+  sdt-service.yaml: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: sdt-service
+      namespace: default
+    spec:
+      type: NodePort
+      selector:
+        app: sdt
+      ports:
+        - name: http
+          protocol: TCP
+          port: 8000
+          targetPort: 8000
+          nodePort: 30008
+        - name: mqtt
+          protocol: TCP
+          port: 1883
+          targetPort: 1883
+          nodePort: 30009
+---
+# ============================================================
+# 7. PersistentVolumeClaim — credentials and append-only timing archive
+# ============================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sdt-manager-timestamps-data-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+# ============================================================
+# 8. Deployment
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdt-manager-timestamps-deployment
+  namespace: default
+  labels:
+    app: sdt-manager-timestamps
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sdt-manager-timestamps
+  template:
+    metadata:
+      labels:
+        app: sdt-manager-timestamps
+    spec:
+      serviceAccountName: sdt-manager-timestamps-sa
+      nodeSelector:
+        kubernetes.io/hostname: sdtm
+      securityContext:
+        fsGroup: 1000
+      containers:
+      - name: sdt-manager
+        image: docker.io/library/sdt-manager-timestamps:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8008
+          protocol: TCP
+          name: http
+        envFrom:
+        - secretRef:
+            name: sdt-manager-timestamps-secret
+        - configMapRef:
+            name: sdt-manager-timestamps-configmap
+        env:
+        - name: WALLET_CONTROLLER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: sdt-manager-timestamps-secret
+              key: WALLET_CONTROLLER_KEY
+        - name: DIGITAL_TWIN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: sdt-manager-timestamps-secret
+              key: DIGITAL_TWIN_API_KEY
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        - name: yaml-scripts
+          mountPath: /app/yaml_scripts
+        - name: ids-kubernetes
+          mountPath: /app/kubernetes
+          readOnly: true
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8008
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8008
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: sdt-manager-timestamps-data-pvc
+      - name: yaml-scripts
+        configMap:
+          name: sdt-manager-timestamps-yaml-scripts
+      - name: ids-kubernetes
+        hostPath:
+          path: /home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT
+          type: Directory
+      restartPolicy: Always
+---
+# ============================================================
+# 9. Service — NodePort 30012
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: sdt-manager-timestamps-service
+  namespace: default
+  labels:
+    app: sdt-manager-timestamps
+spec:
+  type: NodePort
+  selector:
+    app: sdt-manager-timestamps
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8008
+    targetPort: 8008
+    nodePort: 30012

@@ -2,12 +2,13 @@
 import subprocess
 import time
 import logging
+import os
 import uuid
 import re
 from typing import Dict, Optional, List, Tuple
 
 # Base path for IDS connector YAML files
-IDS_YAML_BASE_PATH = "/home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/" #set absolute path to where the yaml files needed to instantiate ids-connector-sdt pods
+IDS_YAML_BASE_PATH = os.environ.get("IDS_YAML_BASE_PATH", "/home/sdtm/SDTM/IDS-Connector/IDS_connector_SDT/")
 
 # IDS Connector configuration files
 IDS_CONFIG_FILES = {
@@ -19,7 +20,7 @@ IDS_CONFIG_FILES = {
         "ecc-consumer-configmap-v.2.yaml",
         "consumer-compiled-v-0.3.yaml",
         "ids_connector_sdt_k8s_deployment.yml",
-        "pods_sync_k3s.yml"
+        os.getenv("IDS_SYNC_MANIFEST", "pods_sync_k3s.yml")  # usecase-specific sync manifest, set via .env
         # Removed pods_sync_monitor.yml as it requires Prometheus CRDs
     ],
     "ids_toe": [
@@ -60,7 +61,7 @@ class IDS_Connector:
         """Apply a single configuration file from local path"""
         file_path = f"{self.yaml_base_path}{config_file}"
         LOGGER.info(f"Applying {config_file} from {file_path}")
-        command = f"kubectl apply -f {file_path}"
+        command = f"sed '/^\\s*uid:/d;/^\\s*resourceVersion:/d;/^\\s*creationTimestamp: \"/d' '{file_path}' | kubectl apply -f -"
         result = self.run_command(command)
         
         if result is not None:

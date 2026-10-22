@@ -4,12 +4,15 @@ import threading
 import os
 from sdt_lifecycle_manager import SDT_LifeCycleManager
 from sdt_connector_manager import SDT_ConnectorManager
-from watchtower_manager import WatchTower_LifeCycleManager
+# Watchtower workflow disabled; keep watchtower_manager.py available for standalone use.
+# from watchtower_manager import WatchTower_LifeCycleManager
 from sdt_manager_interface import SDT_Manager_Interface
 from sdt_credential_store import SDTCredentialStore
 from sdt_authentication_manager import SDTAuthenticationManager
-from adapter_all import DTModelAdapter
+from adapter_all_v2 import DTModelAdapterV2
+from mqtt_failure_reporter import MQTTFailureReporter
 from sdt_performance_tracker import PerformanceTracker, EventCategory
+from performance_instrumentation import create_component, instrument_component
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -20,10 +23,13 @@ class SDT_ManagerCore:
     def __init__(self):
         """Initialize the SDT Manager Core."""
         LOGGER.info("Initializing SDT Manager Core...")
-        
-        # Initialize Performance Tracker (first, so all components can use it)
         self.perf_tracker = PerformanceTracker()
-        LOGGER.info("Performance Tracker has been instantiated")
+
+        # Initialize reporting first so all API and background workflows can
+        # share the same non-blocking MQTT publisher.
+        self.failure_reporter = create_component(
+            self.perf_tracker, MQTTFailureReporter.from_env, EventCategory.MQTT_REPORTING
+        )
         
         # Get configuration from environment variables
         sdt_interface_host = os.environ.get('SDT_INTERFACE_HOST', 'localhost')
@@ -31,80 +37,62 @@ class SDT_ManagerCore:
         api_server_host = os.environ.get('API_SERVER_HOST', '0.0.0.0')
         api_server_port = int(os.environ.get('API_SERVER_PORT', '8008'))
         
-        # Initialize SDT Lifecycle Manager (with timing)
-        with self.perf_tracker.track(
-            EventCategory.COMPONENT_INSTANTIATION,
-            "SDT_LifeCycleManager",
-            {"component": "sdt"}
-        ):
-            self.lifecycle_manager = SDT_LifeCycleManager()
+        # Initialize SDT Lifecycle Manager
+        self.lifecycle_manager = create_component(
+            self.perf_tracker, SDT_LifeCycleManager, EventCategory.LIFECYCLE
+        )
         LOGGER.info("SDT Lifecycle Manager has been instantiated")
         
-        # Initialize Watchtower Lifecycle Manager (with timing)
-        with self.perf_tracker.track(
-            EventCategory.COMPONENT_INSTANTIATION,
-            "WatchTower_LifeCycleManager",
-            {"component": "watchtower"}
-        ):
-            self.watchtower_manager = WatchTower_LifeCycleManager()
-        LOGGER.info("Watchtower Lifecycle Manager has been instantiated")
+        # Watchtower workflow disabled in SDT Manager.
+        # self.watchtower_manager = WatchTower_LifeCycleManager()
+        # LOGGER.info("Watchtower Lifecycle Manager has been instantiated")
         
-        # Initialize SDT Connector Manager (with timing)
-        with self.perf_tracker.track(
-            EventCategory.COMPONENT_INSTANTIATION,
-            "SDT_ConnectorManager",
-            {"component": "ids_sdt"}
-        ):
-            self.connector_manager = SDT_ConnectorManager()
+        # Initialize SDT Connector Manager (independent IDS connector management)
+        self.connector_manager = create_component(
+            self.perf_tracker, SDT_ConnectorManager, EventCategory.LIFECYCLE
+        )
         LOGGER.info("SDT Connector Manager has been instantiated")
         
-        # Initialize adapter before CCM manager so it's available for the API (with timing)
-        with self.perf_tracker.track(
-            EventCategory.COMPONENT_INSTANTIATION,
-            "DTModelAdapter",
-            {"component": "adapter"}
-        ):
-            self.sdt_adapter = DTModelAdapter()
-        LOGGER.info(f"Adapter for DT Model has been instantiated with host={sdt_interface_host}, port={sdt_interface_port}")
+        # Initialize adapter before CCM manager so it's available for the API.
+        # Change this class manually when switching adapter versions.
+        adapter_class = DTModelAdapterV2
+        self.sdt_adapter = create_component(
+            self.perf_tracker, adapter_class, EventCategory.ADAPTER
+        )
+        LOGGER.info(
+            f"Adapter for DT Model ({adapter_class.__name__}) has been instantiated "
+            f"with host={sdt_interface_host}, port={sdt_interface_port}"
+        )
         
-        # Initialize SQLite credential store (with timing)
+        # Initialize SQLite credential store
         db_path = os.environ.get('CREDENTIAL_DB_PATH', 'sdt_credentials.db')
-        with self.perf_tracker.track(
-            EventCategory.COMPONENT_INSTANTIATION,
-            "SDTCredentialStore",
-            {"component": "credential_store"}
-        ):
-            self.credential_store = SDTCredentialStore(db_path=db_path)
+        self.credential_store = create_component(
+            self.perf_tracker, SDTCredentialStore, EventCategory.CREDENTIAL_STORE,
+            db_path=db_path,
+        )
         LOGGER.info("SDT Credential Store has been instantiated")
 
         # Clean up any stale credentials left over from a previous process run.
-        # Since pod_map and sdt_to_watchtower_map are in-memory, any credentials
+        # Since pod_map and sdt_to_ids_map are in-memory, any credentials
         # in the DB at startup belong to deployments we no longer track.
-        self._cleanup_stale_credentials()
-        
-        # Initialize Authentication Manager (with timing)
-        with self.perf_tracker.track(
-            EventCategory.COMPONENT_INSTANTIATION,
-            "SDTAuthenticationManager",
-            {"component": "auth_manager"}
-        ):
-            self.auth_manager = SDTAuthenticationManager(
-                credential_store=self.credential_store,
-                am_base_url=os.environ.get('AM_BASE_URL'),
-                wallet_controller_url=os.environ.get('WALLET_CONTROLLER_URL'),
-                wallet_controller_key=os.environ.get('WALLET_CONTROLLER_KEY'),
-                digital_twin_api_key=os.environ.get('DIGITAL_TWIN_API_KEY'),
-                perf_tracker=self.perf_tracker,
-            )
+        with self.perf_tracker.track(EventCategory.CREDENTIAL_STORE, "startup_cleanup"):
+            self._cleanup_stale_credentials()
+
+        # Initialize Authentication Manager
+        self.auth_manager = create_component(
+            self.perf_tracker, SDTAuthenticationManager, EventCategory.AUTH_TOKEN_ACQUISITION,
+            credential_store=self.credential_store,
+            am_base_url=os.environ.get('AM_BASE_URL'),
+            wallet_controller_url=os.environ.get('WALLET_CONTROLLER_URL'),
+            wallet_controller_key=os.environ.get('WALLET_CONTROLLER_KEY'),
+            digital_twin_api_key=os.environ.get('DIGITAL_TWIN_API_KEY'),
+        )
         LOGGER.info("SDT Authentication Manager has been instantiated")
         
-        # Initialize NBI server (SDT Manager Interface) (with timing)
-        with self.perf_tracker.track(
-            EventCategory.COMPONENT_INSTANTIATION,
-            "SDT_Manager_Interface",
-            {"component": "api_interface"}
-        ):
-            self.sdt_manager = SDT_Manager_Interface(self)
+        # Initialize NBI server (SDT Manager Interface)
+        self.sdt_manager = create_component(
+            self.perf_tracker, SDT_Manager_Interface, EventCategory.LIFECYCLE, self
+        )
         LOGGER.info(f"SDT Manager API has been instantiated and will listen on {api_server_host}:{api_server_port}")
 
         # Store configuration
@@ -118,6 +106,7 @@ class SDT_ManagerCore:
         # Thread management
         self.terminate_event = threading.Event()
         self.api_thread = None
+        instrument_component(self, self.perf_tracker, EventCategory.LIFECYCLE)
         
         LOGGER.info("SDT Manager Core has been instantiated and initialized.")
 
@@ -125,8 +114,8 @@ class SDT_ManagerCore:
         """
         Remove all credential rows left over from a previous process run.
 
-        On startup the in-memory pod_map, sdt_to_ids_map, and
-        sdt_to_watchtower_map are empty, so any rows already in the
+        On startup the in-memory pod_map and sdt_to_ids_map are empty,
+        so any rows already in the
         credential store belong to deployments we can no longer manage.
         Purging them keeps the store consistent with the live cluster state.
 
@@ -171,6 +160,9 @@ class SDT_ManagerCore:
         self.terminate_event.set()
         
         # API thread is daemon, it will terminate when main process exits
+
+        # Flush queued MQTT reports without blocking shutdown indefinitely.
+        self.failure_reporter.stop()
         
         LOGGER.info("SDT Manager stopped")
 

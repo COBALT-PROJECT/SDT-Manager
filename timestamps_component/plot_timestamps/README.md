@@ -1,5 +1,19 @@
 # CDF Plot Generator
 
+For the current timestamp manager, use `plot_events.py` with its JSONL archive or
+CSV export. It produces one CDF per category/operation and a `summary.csv` with
+count, mean, median, standard deviation, minimum, maximum, and failure count.
+Completed records of all outcomes are included. Nested operations overlap and
+must not be added together as end-to-end durations.
+
+```bash
+python3 plot_events.py ../performance_events.jsonl --output plots
+python3 plot_events.py ../performance.csv --category token_distribution --output plots
+```
+
+The instructions below describe historical spreadsheets and plots from the former
+Watchtower-enabled implementation. Those old scripts still operate on those files.
+
 Generates 3 empirical CDF plots from `timestamps_results.xlsx`, each with mean (μ), median, and standard deviation (σ).
 
 ## Requirements

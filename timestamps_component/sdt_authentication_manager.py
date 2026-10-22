@@ -26,24 +26,17 @@ Flow (called during SDT deletion):
 import os
 import time
 import logging
-import requests
+from performance_http import requests
 from typing import Optional, Dict, Tuple
 
 from sdt_credential_store import (
     SDTCredentialStore,
     COMPONENT_SDT,
     COMPONENT_IDS_CONNECTOR,
-    COMPONENT_WATCHTOWER,
+    # COMPONENT_WATCHTOWER,  # Watchtower workflow disabled
 )
 
 LOGGER = logging.getLogger(__name__)
-
-# Optional import — tracker is injected; if unavailable we use a no-op.
-try:
-    from sdt_performance_tracker import PerformanceTracker, EventCategory
-except ImportError:
-    PerformanceTracker = None
-    EventCategory = None
 
 
 class SDTAuthenticationManager:
@@ -58,8 +51,7 @@ class SDTAuthenticationManager:
                  twin_scope: str = "digital_twin profile",
                  poll_interval: int = 5,
                  poll_timeout: int = 180,
-                 verify_ssl: bool = False,
-                 perf_tracker=None):
+                 verify_ssl: bool = False):
         """
         Initialize the SDT Authentication Manager.
 
@@ -77,10 +69,8 @@ class SDTAuthenticationManager:
             poll_interval:         Seconds between AM status polls.
             poll_timeout:          Max seconds to wait for credential issuance.
             verify_ssl:            Whether to verify TLS certificates.
-            perf_tracker:          Optional PerformanceTracker instance.
         """
         self.credential_store = credential_store
-        self.perf_tracker = perf_tracker
 
         # Configuration from args -> env -> defaults
         self.am_base_url = (
@@ -146,23 +136,10 @@ class SDTAuthenticationManager:
         twin_name = twin_name or f"SDT-{sdt_id}"
         LOGGER.info(f"Starting authentication flow for SDT {sdt_id}")
 
-        # Start overall auth token acquisition timer
-        _perf_id = None
-        if self.perf_tracker and EventCategory:
-            _perf_id = self.perf_tracker.start_timer(
-                EventCategory.AUTH_TOKEN_ACQUISITION,
-                "register_and_get_token",
-                {"sdt_id": sdt_id, "ids_connector_id": ids_connector_id,
-                 "watchtower_id": watchtower_id},
-            )
-
         # Step 1 — Register via wallet controller
         client_id, client_secret = self._register_twin(sdt_id, twin_name)
         if not client_id or not client_secret:
             LOGGER.error(f"Registration failed for SDT {sdt_id}")
-            if _perf_id:
-                self.perf_tracker.stop_timer(_perf_id, status="failed",
-                                             extra_metadata={"step": "registration"})
             return False, None
 
         # Step 2 — Persist SDT client credentials in SQLite
@@ -178,18 +155,12 @@ class SDTAuthenticationManager:
         # Step 3 — Poll AM until credential is issued
         if not self._poll_until_issued(sdt_id):
             LOGGER.error(f"Credential issuance timed out for SDT {sdt_id}")
-            if _perf_id:
-                self.perf_tracker.stop_timer(_perf_id, status="failed",
-                                             extra_metadata={"step": "poll_until_issued"})
             return False, None
 
         # Step 4 — Fetch OAuth2 token
         access_token = self._fetch_token(client_id, client_secret)
         if not access_token:
             LOGGER.error(f"Token acquisition failed for SDT {sdt_id}")
-            if _perf_id:
-                self.perf_tracker.stop_timer(_perf_id, status="failed",
-                                             extra_metadata={"step": "fetch_token"})
             return False, None
 
         # Step 5 — Store the token for the SDT
@@ -211,32 +182,27 @@ class SDTAuthenticationManager:
                 f"(linked to SDT {sdt_id})"
             )
 
-        # Step 7 — Store credentials for the Watchtower instance (if present)
-        if watchtower_id:
-            self.credential_store.store_credentials(
-                sdt_id=watchtower_id,
-                client_id=client_id,
-                client_secret=client_secret,
-                token_scope=self.twin_scope,
-                linked_sdt_id=sdt_id,
-                component_type=COMPONENT_WATCHTOWER,
-            )
-            self.credential_store.store_access_token(watchtower_id, access_token)
-            LOGGER.info(
-                f"Stored credentials for Watchtower {watchtower_id} "
-                f"(linked to SDT {sdt_id})"
-            )
+        # Step 7 — Watchtower credential storage disabled
+        # if watchtower_id:
+        #     self.credential_store.store_credentials(
+        #         sdt_id=watchtower_id,
+        #         client_id=client_id,
+        #         client_secret=client_secret,
+        #         token_scope=self.twin_scope,
+        #         linked_sdt_id=sdt_id,
+        #         component_type=COMPONENT_WATCHTOWER,
+        #     )
+        #     self.credential_store.store_access_token(watchtower_id, access_token)
+        #     LOGGER.info(
+        #         f"Stored credentials for Watchtower {watchtower_id} "
+        #         f"(linked to SDT {sdt_id})"
+        #     )
 
         LOGGER.info(
             f"Authentication flow completed for SDT {sdt_id} — "
-            f"IDS connector: {ids_connector_id or 'none'}, "
-            f"Watchtower: {watchtower_id or 'none'}"
+            f"IDS connector: {ids_connector_id or 'none'}"
+            # f", Watchtower: {watchtower_id or 'none'}"
         )
-
-        # Stop overall auth token acquisition timer
-        if _perf_id:
-            self.perf_tracker.stop_timer(_perf_id, status="completed")
-
         return True, access_token
 
     def delete_twin_auth(self, sdt_id: str) -> bool:
